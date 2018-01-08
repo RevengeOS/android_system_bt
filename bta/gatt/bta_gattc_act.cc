@@ -714,7 +714,8 @@ void bta_gattc_disc_cmpl(tBTA_GATTC_CLCB* p_clcb,
   else if (p_q_cmd != NULL) {
     p_clcb->p_q_cmd = NULL;
     /* execute pending operation of link block still present */
-    if (l2cu_find_lcb_by_bd_addr(p_clcb->p_srcb->server_bda, BT_TRANSPORT_LE)) {
+    if (l2cu_find_lcb_by_bd_addr(p_clcb->p_srcb->server_bda,
+                                 p_clcb->transport)) {
       bta_gattc_sm_execute(p_clcb, p_q_cmd->hdr.event, p_q_cmd);
     }
     /* if the command executed requeued the cmd, we don't
@@ -1125,8 +1126,10 @@ bool bta_gattc_process_srvc_chg_ind(uint16_t conn_id, tBTA_GATTC_RCB* p_clrcb,
 
   const tBTA_GATTC_CHARACTERISTIC* p_char =
       bta_gattc_get_characteristic_srcb(p_srcb, p_notify->handle);
-  if (!p_char || p_char->service->uuid != gattp_uuid ||
-      p_char->uuid != srvc_chg_uuid) {
+  if (!p_char) return false;
+  const tBTA_GATTC_SERVICE* p_svc =
+      bta_gattc_get_service_for_handle_srcb(p_srcb, p_char->value_handle);
+  if (!p_svc || p_svc->uuid != gattp_uuid || p_char->uuid != srvc_chg_uuid) {
     return false;
   }
 

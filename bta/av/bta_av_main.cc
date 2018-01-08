@@ -165,15 +165,13 @@ typedef void (*tBTA_AV_NSM_ACT)(tBTA_AV_DATA* p_data);
 static void bta_av_api_enable(tBTA_AV_DATA* p_data);
 static void bta_av_api_register(tBTA_AV_DATA* p_data);
 static void bta_av_ci_data(tBTA_AV_DATA* p_data);
-#if (AVDT_REPORTING == TRUE)
 static void bta_av_rpc_conn(tBTA_AV_DATA* p_data);
-#endif
 static void bta_av_api_to_ssm(tBTA_AV_DATA* p_data);
 
 static void bta_av_sco_chg_cback(tBTA_SYS_CONN_STATUS status, uint8_t id,
-                                 uint8_t app_id, const RawAddress* peer_addr);
+                                 uint8_t app_id, const RawAddress& peer_addr);
 static void bta_av_sys_rs_cback(tBTA_SYS_CONN_STATUS status, uint8_t id,
-                                uint8_t app_id, const RawAddress* peer_addr);
+                                uint8_t app_id, const RawAddress& peer_addr);
 
 /* action functions */
 const tBTA_AV_NSM_ACT bta_av_nsm_act[] = {
@@ -190,9 +188,7 @@ const tBTA_AV_NSM_ACT bta_av_nsm_act[] = {
     bta_av_rc_browse_closed, /* BTA_AV_AVRC_BROWSE_CLOSE_EVT */
     bta_av_conn_chg,         /* BTA_AV_CONN_CHG_EVT */
     bta_av_dereg_comp,       /* BTA_AV_DEREG_COMP_EVT */
-#if (AVDT_REPORTING == TRUE)
     bta_av_rpc_conn, /* BTA_AV_AVDT_RPT_CONN_EVT */
-#endif
     bta_av_api_to_ssm, /* BTA_AV_API_START_EVT */
     bta_av_api_to_ssm, /* BTA_AV_API_STOP_EVT */
 };
@@ -383,7 +379,6 @@ void bta_av_conn_cback(UNUSED_ATTR uint8_t handle, const RawAddress* bd_addr,
   }
 }
 
-#if (AVDT_REPORTING == TRUE)
 /*******************************************************************************
  *
  * Function         bta_av_a2dp_report_cback
@@ -399,7 +394,6 @@ static void bta_av_a2dp_report_cback(UNUSED_ATTR uint8_t handle,
   /* Do not need to handle report data for now.
    * This empty function is here for conformance reasons. */
 }
-#endif
 
 /*******************************************************************************
  *
@@ -556,12 +550,10 @@ static void bta_av_api_register(tBTA_AV_DATA* p_data) {
       btav_a2dp_codec_index_t codec_index_max =
           BTAV_A2DP_CODEC_INDEX_SOURCE_MAX;
 
-#if (AVDT_REPORTING == TRUE)
       if (bta_av_cb.features & BTA_AV_FEAT_REPORT) {
         cs.cfg.psc_mask |= AVDT_PSC_REPORT;
         cs.p_report_cback = bta_av_a2dp_report_cback;
       }
-#endif
       if (bta_av_cb.features & BTA_AV_FEAT_DELAY_RPT)
         cs.cfg.psc_mask |= AVDT_PSC_DELAY_RPT;
 
@@ -740,9 +732,7 @@ static void bta_av_ci_data(tBTA_AV_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-#if (AVDT_REPORTING == TRUE)
 static void bta_av_rpc_conn(UNUSED_ATTR tBTA_AV_DATA* p_data) {}
-#endif
 
 /*******************************************************************************
  *
@@ -847,7 +837,7 @@ void bta_av_restore_switch(void) {
  ******************************************************************************/
 static void bta_av_sys_rs_cback(UNUSED_ATTR tBTA_SYS_CONN_STATUS status,
                                 uint8_t id, uint8_t app_id,
-                                const RawAddress* peer_addr) {
+                                const RawAddress& peer_addr) {
   int i;
   tBTA_AV_SCB* p_scb = NULL;
   uint8_t cur_role;
@@ -859,7 +849,7 @@ static void bta_av_sys_rs_cback(UNUSED_ATTR tBTA_SYS_CONN_STATUS status,
      * role change event */
     /* note that more than one SCB (a2dp & vdp) maybe waiting for this event */
     p_scb = bta_av_cb.p_scb[i];
-    if (p_scb && p_scb->peer_addr == *peer_addr) {
+    if (p_scb && p_scb->peer_addr == peer_addr) {
       tBTA_AV_ROLE_RES* p_buf =
           (tBTA_AV_ROLE_RES*)osi_malloc(sizeof(tBTA_AV_ROLE_RES));
       APPL_TRACE_DEBUG("new_role:%d, hci_status:x%x hndl: x%x", id, app_id,
@@ -883,9 +873,9 @@ static void bta_av_sys_rs_cback(UNUSED_ATTR tBTA_SYS_CONN_STATUS status,
 
   /* restore role switch policy, if role switch failed */
   if ((HCI_SUCCESS != app_id) &&
-      (BTM_GetRole(*peer_addr, &cur_role) == BTM_SUCCESS) &&
+      (BTM_GetRole(peer_addr, &cur_role) == BTM_SUCCESS) &&
       (cur_role == BTM_ROLE_SLAVE)) {
-    bta_sys_set_policy(BTA_ID_AV, HCI_ENABLE_MASTER_SLAVE_SWITCH, *peer_addr);
+    bta_sys_set_policy(BTA_ID_AV, HCI_ENABLE_MASTER_SLAVE_SWITCH, peer_addr);
   }
 
   /* if BTA_AvOpen() was called for other device, which caused the role switch
@@ -925,7 +915,7 @@ static void bta_av_sys_rs_cback(UNUSED_ATTR tBTA_SYS_CONN_STATUS status,
  ******************************************************************************/
 static void bta_av_sco_chg_cback(tBTA_SYS_CONN_STATUS status, uint8_t id,
                                  UNUSED_ATTR uint8_t app_id,
-                                 UNUSED_ATTR const RawAddress* peer_addr) {
+                                 UNUSED_ATTR const RawAddress& peer_addr) {
   tBTA_AV_SCB* p_scb;
   int i;
   tBTA_AV_API_STOP stop;
@@ -1346,10 +1336,8 @@ const char* bta_av_evt_code(uint16_t evt_code) {
       return "CONN_CHG";
     case BTA_AV_DEREG_COMP_EVT:
       return "DEREG_COMP";
-#if (AVDT_REPORTING == TRUE)
     case BTA_AV_AVDT_RPT_CONN_EVT:
       return "RPT_CONN";
-#endif
     case BTA_AV_API_START_EVT:
       return "API_START";
     case BTA_AV_API_STOP_EVT:

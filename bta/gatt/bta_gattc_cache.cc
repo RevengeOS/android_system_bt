@@ -61,7 +61,7 @@ tBTA_GATTC_CHARACTERISTIC* bta_gattc_get_characteristic_srcb(
 #define BTA_GATT_SDP_DB_SIZE 4096
 
 #define GATT_CACHE_PREFIX "/data/misc/bluetooth/gatt_cache_"
-#define GATT_CACHE_VERSION 2
+#define GATT_CACHE_VERSION 3
 
 static void bta_gattc_generate_cache_file_name(char* buffer, size_t buffer_len,
                                                const RawAddress& bda) {
@@ -163,7 +163,7 @@ static void add_service_to_gatt_db(std::vector<tBTA_GATTC_SERVICE>& gatt_db,
                                    uint16_t s_handle, uint16_t e_handle,
                                    const Uuid& uuid, bool is_primary) {
 #if (BTA_GATT_DEBUG == TRUE)
-  VLOG(1) << "Add a service into Service";
+  VLOG(1) << "Add a service into GATT DB";
 #endif
 
   gatt_db.emplace_back(tBTA_GATTC_SERVICE{
@@ -203,8 +203,7 @@ static void add_characteristic_to_gatt_db(
       tBTA_GATTC_CHARACTERISTIC{.declaration_handle = attr_handle,
                                 .value_handle = value_handle,
                                 .properties = property,
-                                .uuid = uuid,
-                                .service = service});
+                                .uuid = uuid});
   return;
 }
 
@@ -237,9 +236,8 @@ static void add_descriptor_to_gatt_db(std::vector<tBTA_GATTC_SERVICE>& gatt_db,
     char_node = &(*it);
   }
 
-  char_node->descriptors.emplace_back(tBTA_GATTC_DESCRIPTOR{
-      .handle = handle, .uuid = uuid, .characteristic = char_node,
-  });
+  char_node->descriptors.emplace_back(
+      tBTA_GATTC_DESCRIPTOR{.handle = handle, .uuid = uuid});
 }
 
 /* Add an attribute into database cache buffer */
@@ -639,7 +637,7 @@ std::vector<tBTA_GATTC_SERVICE>* bta_gattc_get_services(uint16_t conn_id) {
   return bta_gattc_get_services_srcb(p_srcb);
 }
 
-static tBTA_GATTC_SERVICE* bta_gattc_get_service_for_handle_srcb(
+tBTA_GATTC_SERVICE* bta_gattc_get_service_for_handle_srcb(
     tBTA_GATTC_SERV* p_srcb, uint16_t handle) {
   std::vector<tBTA_GATTC_SERVICE>* services =
       bta_gattc_get_services_srcb(p_srcb);
@@ -705,6 +703,30 @@ const tBTA_GATTC_DESCRIPTOR* bta_gattc_get_descriptor(uint16_t conn_id,
 
   tBTA_GATTC_SERV* p_srcb = p_clcb->p_srcb;
   return bta_gattc_get_descriptor_srcb(p_srcb, handle);
+}
+
+tBTA_GATTC_CHARACTERISTIC* bta_gattc_get_owning_characteristic_srcb(
+    tBTA_GATTC_SERV* p_srcb, uint16_t handle) {
+  tBTA_GATTC_SERVICE* service =
+      bta_gattc_get_service_for_handle_srcb(p_srcb, handle);
+
+  if (!service) return NULL;
+
+  for (tBTA_GATTC_CHARACTERISTIC& charac : service->characteristics) {
+    for (const tBTA_GATTC_DESCRIPTOR& desc : charac.descriptors) {
+      if (handle == desc.handle) return &charac;
+    }
+  }
+
+  return NULL;
+}
+
+const tBTA_GATTC_CHARACTERISTIC* bta_gattc_get_owning_characteristic(
+    uint16_t conn_id, uint16_t handle) {
+  tBTA_GATTC_CLCB* p_clcb = bta_gattc_find_clcb_by_conn_id(conn_id);
+  if (!p_clcb) return NULL;
+
+  return bta_gattc_get_owning_characteristic_srcb(p_clcb->p_srcb, handle);
 }
 
 /*******************************************************************************
@@ -880,21 +902,11 @@ void bta_gattc_get_gatt_db(uint16_t conn_id, uint16_t start_handle,
                              count);
 }
 
-/*******************************************************************************
- *
- * Function         bta_gattc_rebuild_cache
- *
- * Description      rebuild server cache from NV cache.
- *
- * Parameters
- *
- * Returns          None.
- *
- ******************************************************************************/
+/* rebuild server cache from NV cache */
 void bta_gattc_rebuild_cache(tBTA_GATTC_SERV* p_srvc_cb, uint16_t num_attr,
                              tBTA_GATTC_NV_ATTR* p_attr) {
   /* first attribute loading, initialize buffer */
-  LOG(ERROR) << __func__;
+  LOG(INFO) << __func__ << " " << num_attr;
 
   // clear reallocating
   std::vector<tBTA_GATTC_SERVICE>().swap(p_srvc_cb->srvc_cache);

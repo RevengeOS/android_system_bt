@@ -39,6 +39,7 @@
 #include "bta_sys.h"
 #include "btm_api.h"
 #include "btm_int.h"
+#include "device/include/controller.h"
 #include "gap_api.h"
 #include "l2c_api.h"
 #include "osi/include/allocator.h"
@@ -933,8 +934,9 @@ void bta_jv_l2cap_connect(int32_t type, tBTA_SEC sec_mask, tBTA_JV_ROLE role,
     if ((type != BTA_JV_CONN_TYPE_L2CAP) ||
         (bta_jv_check_psm(remote_psm))) /* allowed */
     {
-      handle = GAP_ConnOpen("", sec_id, 0, &peer_bd_addr, remote_psm, &cfg,
-                            ertm_info.get(), sec_mask, chan_mode_mask,
+      uint16_t max_mps = controller_get_interface()->get_acl_data_size_ble();
+      handle = GAP_ConnOpen("", sec_id, 0, &peer_bd_addr, remote_psm, max_mps,
+                            &cfg, ertm_info.get(), sec_mask, chan_mode_mask,
                             bta_jv_l2cap_client_cback, type);
       if (handle != GAP_INVALID_HANDLE) {
         evt_data.status = BTA_JV_SUCCESS;
@@ -1079,11 +1081,12 @@ void bta_jv_l2cap_start_server(int32_t type, tBTA_SEC sec_mask,
   */
 
   uint8_t sec_id = bta_jv_alloc_sec_id();
+  uint16_t max_mps = controller_get_interface()->get_acl_data_size_ble();
   /* PSM checking is not required for LE COC */
   if (0 == sec_id ||
       ((type == BTA_JV_CONN_TYPE_L2CAP) && (!bta_jv_check_psm(local_psm))) ||
-      (handle = GAP_ConnOpen("JV L2CAP", sec_id, 1, nullptr, local_psm, &cfg,
-                             ertm_info.get(), sec_mask, chan_mode_mask,
+      (handle = GAP_ConnOpen("JV L2CAP", sec_id, 1, nullptr, local_psm, max_mps,
+                             &cfg, ertm_info.get(), sec_mask, chan_mode_mask,
                              bta_jv_l2cap_server_cback, type)) ==
           GAP_INVALID_HANDLE) {
     bta_jv_free_sec_id(&sec_id);

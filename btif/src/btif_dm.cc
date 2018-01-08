@@ -843,6 +843,14 @@ static void btif_dm_pin_req_evt(tBTA_DM_PIN_REQ* p_pin_req) {
   const RawAddress& bd_addr = p_pin_req->bd_addr;
   memcpy(bd_name.name, p_pin_req->bd_name, BD_NAME_LEN);
 
+  if (pairing_cb.state == BT_BOND_STATE_BONDING &&
+      bd_addr != pairing_cb.bd_addr) {
+    BTIF_TRACE_WARNING("%s(): already in bonding state, reject request",
+                       __FUNCTION__);
+    btif_dm_pin_reply(&bd_addr, 0, 0, NULL);
+    return;
+  }
+
   bond_state_changed(BT_STATUS_SUCCESS, bd_addr, BT_BOND_STATE_BONDING);
 
   cod = devclass2uint(p_pin_req->dev_class);
@@ -925,6 +933,14 @@ static void btif_dm_ssp_cfm_req_evt(tBTA_DM_SP_CFM_REQ* p_ssp_cfm_req) {
 
   RawAddress bd_addr = p_ssp_cfm_req->bd_addr;
   memcpy(bd_name.name, p_ssp_cfm_req->bd_name, BD_NAME_LEN);
+
+  if (pairing_cb.state == BT_BOND_STATE_BONDING &&
+      bd_addr != pairing_cb.bd_addr) {
+    BTIF_TRACE_WARNING("%s(): already in bonding state, reject request",
+                       __FUNCTION__);
+    btif_dm_ssp_reply(&bd_addr, BT_SSP_VARIANT_PASSKEY_CONFIRMATION, 0, 0);
+    return;
+  }
 
   /* Set the pairing_cb based on the local & remote authentication requirements
    */
@@ -1054,23 +1070,22 @@ static void btif_dm_auth_cmpl_evt(tBTA_DM_AUTH_CMPL* p_auth_cmpl) {
     }
   }
 
-  // We could have received a new link key without going through the pairing
-  // flow.  If so, we don't want to perform SDP or any other operations on the
-  // authenticated device. Also, make sure that the link key is not derived from
-  // secure LTK, because we will need to perform SDP in case of link key
-  // derivation to allow bond state change notification for the BR/EDR transport
-  // so that the subsequent BR/EDR connections to the remote can use the derived
-  // link key.
-  if (p_auth_cmpl->bd_addr != pairing_cb.bd_addr &&
-      (!pairing_cb.ble.is_penc_key_rcvd)) {
-    LOG(INFO) << __func__
-              << " skipping SDP since we did not initiate pairing to "
-              << p_auth_cmpl->bd_addr;
-    return;
-  }
-
-  // Skip SDP for certain  HID Devices
   if (p_auth_cmpl->success) {
+    // We could have received a new link key without going through the pairing
+    // flow.  If so, we don't want to perform SDP or any other operations on the
+    // authenticated device. Also, make sure that the link key is not derived
+    // from secure LTK, because we will need to perform SDP in case of link key
+    // derivation to allow bond state change notification for the BR/EDR
+    // transport so that the subsequent BR/EDR connections to the remote can use
+    // the derived link key.
+    if (p_auth_cmpl->bd_addr != pairing_cb.bd_addr &&
+        (!pairing_cb.ble.is_penc_key_rcvd)) {
+      LOG(INFO) << __func__
+                << " skipping SDP since we did not initiate pairing to "
+                << p_auth_cmpl->bd_addr;
+      return;
+    }
+
     btif_storage_set_remote_addr_type(&bd_addr, p_auth_cmpl->addr_type);
     btif_update_remote_properties(p_auth_cmpl->bd_addr, p_auth_cmpl->bd_name,
                                   NULL, p_auth_cmpl->dev_type);

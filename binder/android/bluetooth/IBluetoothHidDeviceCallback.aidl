@@ -17,15 +17,14 @@
 package android.bluetooth;
 
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothHidDeviceAppConfiguration;
 
 /** @hide */
 interface IBluetoothHidDeviceCallback {
-   void onAppStatusChanged(in BluetoothDevice device, in BluetoothHidDeviceAppConfiguration config, boolean registered);
+   void onAppStatusChanged(in BluetoothDevice device, boolean registered);
    void onConnectionStateChanged(in BluetoothDevice device, in int state);
    void onGetReport(in BluetoothDevice device, in byte type, in byte id, in int bufferSize);
    void onSetReport(in BluetoothDevice device, in byte type, in byte id, in byte[] data);
    void onSetProtocol(in BluetoothDevice device, in byte protocol);
-   void onIntrData(in BluetoothDevice device, in byte reportId, in byte[] data);
+   void onInterruptData(in BluetoothDevice device, in byte reportId, in byte[] data);
    void onVirtualCableUnplug(in BluetoothDevice device);
 }

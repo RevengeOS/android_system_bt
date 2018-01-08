@@ -101,9 +101,7 @@ enum {
   BTA_AV_AVRC_BROWSE_CLOSE_EVT,
   BTA_AV_CONN_CHG_EVT,
   BTA_AV_DEREG_COMP_EVT,
-#if (AVDT_REPORTING == TRUE)
   BTA_AV_AVDT_RPT_CONN_EVT,
-#endif
   BTA_AV_API_START_EVT, /* the following 2 events must be in the same order as
                            the *AP_*EVT */
   BTA_AV_API_STOP_EVT
@@ -386,7 +384,7 @@ typedef struct {
 #define BTA_AV_ROLE_SUSPEND_OPT 0x40 /* Suspend on Start option is set */
 
 /* union of all event datatypes */
-typedef union {
+union tBTA_AV_DATA {
   BT_HDR hdr;
   tBTA_AV_API_ENABLE api_enable;
   tBTA_AV_API_REG api_reg;
@@ -407,7 +405,7 @@ typedef union {
   tBTA_AV_SDP_RES sdp_res;
   tBTA_AV_API_META_RSP api_meta_rsp;
   tBTA_AV_API_STATUS_RSP api_status_rsp;
-} tBTA_AV_DATA;
+};
 
 typedef union {
   tBTA_AV_API_OPEN open; /* used only before open and role switch
@@ -443,12 +441,12 @@ typedef union {
   0x02 /* API open was called while incoming timer is running */
 
 /* type for AV stream control block */
-typedef struct {
+struct tBTA_AV_SCB {
   const tBTA_AV_ACT* p_act_tbl; /* the action table for stream state machine */
   const tBTA_AV_CO_FUNCTS* p_cos; /* the associated callout functions */
   bool sdp_discovery_started; /* variable to determine whether SDP is started */
   tBTA_AV_SEP seps[BTAV_A2DP_CODEC_INDEX_MAX];
-  tAVDT_CFG* p_cap;  /* buffer used for get capabilities */
+  tAVDT_CFG peer_cap; /* buffer used for get capabilities */
   list_t* a2dp_list; /* used for audio channels only */
   tBTA_AV_Q_INFO q_info;
   tAVDT_SEP_INFO sep_info[BTA_AV_NUM_SEPS]; /* stream discovery results */
@@ -500,7 +498,7 @@ typedef struct {
   uint16_t uuid_int; /*intended UUID of Initiator to connect to */
   bool offload_start_pending;
   bool skip_sdp; /* Decides if sdp to be done prior to profile connection */
-} tBTA_AV_SCB;
+};
 
 #define BTA_AV_RC_ROLE_MASK 0x10
 #define BTA_AV_RC_ROLE_INT 0x00
@@ -620,7 +618,6 @@ extern bool bta_av_hdl_event(BT_HDR* p_msg);
 extern const char* bta_av_evt_code(uint16_t evt_code);
 extern bool bta_av_switch_if_needed(tBTA_AV_SCB* p_scb);
 extern bool bta_av_link_role_ok(tBTA_AV_SCB* p_scb, uint8_t bits);
-extern bool bta_av_is_rcfg_sst(tBTA_AV_SCB* p_scb);
 
 /* nsm action functions */
 extern void bta_av_api_disconnect(tBTA_AV_DATA* p_data);
