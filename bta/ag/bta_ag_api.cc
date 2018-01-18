@@ -50,8 +50,7 @@ static const tBTA_SYS_REG bta_ag_reg = {bta_ag_hdl_event, BTA_AgDisable};
  * Returns          BTA_SUCCESS if OK, BTA_FAILURE otherwise.
  *
  ******************************************************************************/
-tBTA_STATUS BTA_AgEnable(tBTA_AG_PARSE_MODE parse_mode,
-                         tBTA_AG_CBACK* p_cback) {
+tBTA_STATUS BTA_AgEnable(tBTA_AG_CBACK* p_cback) {
   /* Error if AG is already enabled, or AG is in the middle of disabling. */
   for (const tBTA_AG_SCB& scb : bta_ag_cb.scb) {
     if (scb.in_use) {
@@ -66,7 +65,6 @@ tBTA_STATUS BTA_AgEnable(tBTA_AG_PARSE_MODE parse_mode,
   tBTA_AG_API_ENABLE* p_buf =
       (tBTA_AG_API_ENABLE*)osi_malloc(sizeof(tBTA_AG_API_ENABLE));
   p_buf->hdr.event = BTA_AG_API_ENABLE_EVT;
-  p_buf->parse_mode = parse_mode;
   p_buf->p_cback = p_cback;
 
   bta_sys_sendmsg(p_buf);
@@ -283,6 +281,17 @@ void BTA_AgSetScoAllowed(bool value) {
 
   p_buf->hdr.event = BTA_AG_API_SET_SCO_ALLOWED_EVT;
   p_buf->value = value;
+
+  bta_sys_sendmsg(p_buf);
+}
+
+void BTA_AgSetActiveDevice(const RawAddress& active_device_addr) {
+  tBTA_AG_API_SET_ACTIVE_DEVICE* p_buf =
+      (tBTA_AG_API_SET_ACTIVE_DEVICE*)osi_malloc(
+          sizeof(tBTA_AG_API_SET_ACTIVE_DEVICE));
+
+  p_buf->hdr.event = BTA_AG_API_SET_ACTIVE_DEVICE_EVT;
+  p_buf->active_device_addr = active_device_addr;
 
   bta_sys_sendmsg(p_buf);
 }

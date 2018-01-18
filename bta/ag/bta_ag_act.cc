@@ -25,7 +25,6 @@
 #include <cstring>
 
 #include "bta_ag_api.h"
-#include "bta_ag_co.h"
 #include "bta_ag_int.h"
 #include "bta_api.h"
 #include "bta_dm_api.h"
@@ -403,8 +402,9 @@ void bta_ag_rfc_close(tBTA_AG_SCB* p_scb, UNUSED_ATTR tBTA_AG_DATA* p_data) {
 
   bta_sys_conn_close(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
 
-  /* call close call-out */
-  bta_ag_co_data_close(close.hdr.handle);
+  if (bta_ag_get_active_device() == p_scb->peer_addr) {
+    bta_clear_active_device();
+  }
 
   /* call close cback */
   (*bta_ag_cb.p_cback)(BTA_AG_CLOSE_EVT, (tBTA_AG*)&close);
@@ -472,10 +472,6 @@ void bta_ag_rfc_open(tBTA_AG_SCB* p_scb, tBTA_AG_DATA* p_data) {
   p_scb->at_cb.p_user = p_scb;
   p_scb->at_cb.cmd_max_len = BTA_AG_CMD_MAX;
   bta_ag_at_init(&p_scb->at_cb);
-
-  /* call app open call-out */
-  bta_ag_co_data_open(bta_ag_scb_to_idx(p_scb),
-                      bta_ag_svc_id[p_scb->conn_service]);
 
   bta_sys_conn_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
 
@@ -764,56 +760,12 @@ void bta_ag_svc_conn_open(tBTA_AG_SCB* p_scb,
         (p_scb->callsetup_ind != BTA_AG_CALLSETUP_NONE)) {
       bta_sys_sco_use(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     }
-
+    if (bta_ag_get_active_device().IsEmpty()) {
+      tBTA_AG_DATA data = {};
+      data.api_set_active_device.active_device_addr = p_scb->peer_addr;
+      bta_ag_api_set_active_device(&data);
+    }
     (*bta_ag_cb.p_cback)(BTA_AG_CONN_EVT, (tBTA_AG*)&evt);
-  }
-}
-
-/*******************************************************************************
- *
- * Function         bta_ag_ci_rx_data
- *
- * Description      Send result code
- *
- * Returns          void
- *
- ******************************************************************************/
-void bta_ag_ci_rx_data(tBTA_AG_SCB* p_scb, tBTA_AG_DATA* p_data) {
-  uint16_t len;
-  tBTA_AG_CI_RX_WRITE* p_rx_write_msg = &p_data->ci_rx_write;
-  char* p_data_area =
-      (char*)(p_rx_write_msg + 1); /* Point to data area after header */
-
-  APPL_TRACE_DEBUG("bta_ag_ci_rx_data:");
-  /* send to RFCOMM */
-  bta_sys_busy(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
-  PORT_WriteData(p_scb->conn_handle, p_data_area, strlen(p_data_area), &len);
-  if ((p_scb->sco_idx != BTM_INVALID_SCO_INDEX) && bta_ag_sco_is_open(p_scb)) {
-    APPL_TRACE_DEBUG("bta_ag_rfc_data, change link policy for SCO");
-    bta_sys_sco_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
-  } else {
-    bta_sys_idle(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
-  }
-}
-
-/*******************************************************************************
- *
- * Function         bta_ag_rcvd_slc_ready
- *
- * Description      Handles SLC ready call-in in case of pass-through mode.
- *
- * Returns          void
- *
- ******************************************************************************/
-void bta_ag_rcvd_slc_ready(tBTA_AG_SCB* p_scb,
-                           UNUSED_ATTR tBTA_AG_DATA* p_data) {
-  APPL_TRACE_DEBUG("bta_ag_rcvd_slc_ready: handle = %d",
-                   bta_ag_scb_to_idx(p_scb));
-
-  if (bta_ag_cb.parse_mode == BTA_AG_PASS_THROUGH) {
-    /* In pass-through mode, BTA knows that SLC is ready only through call-in.
-     */
-    bta_ag_svc_conn_open(p_scb, nullptr);
   }
 }
 

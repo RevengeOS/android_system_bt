@@ -26,33 +26,21 @@
 
 #include "bt_common.h"
 #include "bta_ag_api.h"
-#include "bta_ag_co.h"
 #include "bta_ag_int.h"
 #include "bta_api.h"
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-#include "bta_dm_co.h"
-#endif
 #include "btm_api.h"
 #include "device/include/controller.h"
 #include "device/include/esco_parameters.h"
 #include "osi/include/osi.h"
 #include "utl.h"
 
-#ifndef BTA_AG_SCO_DEBUG
-#define BTA_AG_SCO_DEBUG FALSE
-#endif
-
 /* Codec negotiation timeout */
 #ifndef BTA_AG_CODEC_NEGOTIATION_TIMEOUT_MS
 #define BTA_AG_CODEC_NEGOTIATION_TIMEOUT_MS (3 * 1000) /* 3 seconds */
 #endif
 
-#if (BTA_AG_SCO_DEBUG == TRUE)
-static char* bta_ag_sco_evt_str(uint8_t event);
-static char* bta_ag_sco_state_str(uint8_t state);
-#endif
-
 static bool sco_allowed = true;
+RawAddress active_device_addr;
 
 /* sco events */
 enum {
@@ -65,8 +53,45 @@ enum {
   BTA_AG_SCO_SHUTDOWN_E,   /* shutdown request */
   BTA_AG_SCO_CONN_OPEN_E,  /* sco open */
   BTA_AG_SCO_CONN_CLOSE_E, /* sco closed */
-  BTA_AG_SCO_CI_DATA_E     /* SCO data ready */
 };
+
+#define CASE_RETURN_STR(const) \
+  case const:                  \
+    return #const;
+
+static const char* bta_ag_sco_evt_str(uint8_t event) {
+  switch (event) {
+    CASE_RETURN_STR(BTA_AG_SCO_LISTEN_E)
+    CASE_RETURN_STR(BTA_AG_SCO_OPEN_E)
+    CASE_RETURN_STR(BTA_AG_SCO_XFER_E)
+    CASE_RETURN_STR(BTA_AG_SCO_CN_DONE_E)
+    CASE_RETURN_STR(BTA_AG_SCO_REOPEN_E)
+    CASE_RETURN_STR(BTA_AG_SCO_CLOSE_E)
+    CASE_RETURN_STR(BTA_AG_SCO_SHUTDOWN_E)
+    CASE_RETURN_STR(BTA_AG_SCO_CONN_OPEN_E)
+    CASE_RETURN_STR(BTA_AG_SCO_CONN_CLOSE_E)
+    default:
+      return "Unknown SCO Event";
+  }
+}
+
+static const char* bta_ag_sco_state_str(uint8_t state) {
+  switch (state) {
+    CASE_RETURN_STR(BTA_AG_SCO_SHUTDOWN_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_LISTEN_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_CODEC_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_OPENING_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_OPEN_CL_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_OPEN_XFER_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_OPEN_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_CLOSING_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_CLOSE_OP_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_CLOSE_XFER_ST)
+    CASE_RETURN_STR(BTA_AG_SCO_SHUTTING_ST)
+    default:
+      return "Unknown SCO State";
+  }
+}
 
 static void bta_ag_create_pending_sco(tBTA_AG_SCB* p_scb, bool is_local);
 
@@ -148,14 +173,6 @@ static void bta_ag_sco_disc_cback(uint16_t sco_idx) {
   }
 
   if (handle != 0) {
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-
-    tBTM_STATUS status =
-        BTM_ConfigScoPath(ESCO_DATA_PATH_PCM, NULL, NULL, true);
-    APPL_TRACE_DEBUG("%s: sco close config status = %d", __func__, status);
-    /* SCO clean up here */
-    bta_dm_sco_co_close();
-#endif
 
     /* Restore settings */
     if (bta_ag_cb.sco.p_curr_scb->inuse_codec == BTA_AG_CODEC_MSBC) {
@@ -205,27 +222,7 @@ static void bta_ag_sco_disc_cback(uint16_t sco_idx) {
     }
   }
 }
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-/*******************************************************************************
- *
- * Function         bta_ag_sco_read_cback
- *
- * Description      Callback function is the callback function for incoming
- *                  SCO data over HCI.
- *
- * Returns          void
- *
- ******************************************************************************/
-static void bta_ag_sco_read_cback(uint16_t sco_inx, BT_HDR* p_data,
-                                  tBTM_SCO_DATA_FLAG status) {
-  if (status != BTM_SCO_DATA_CORRECT) {
-    APPL_TRACE_DEBUG("%s: status %d", __func__, status);
-  }
 
-  /* Callout function must free the data. */
-  bta_dm_sco_co_in_data(p_data, status);
-}
-#endif
 /*******************************************************************************
  *
  * Function         bta_ag_remove_sco
@@ -479,13 +476,6 @@ static void bta_ag_create_pending_sco(tBTA_AG_SCB* p_scb, bool is_local) {
         BTM_WriteVoiceSettings(BTM_VOICE_SETTING_CVSD);
     }
 
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-    /* initialize SCO setup, no voice setting for AG, data rate <==> sample
-     * rate */
-    BTM_ConfigScoPath(params.input_data_path, bta_ag_sco_read_cback, NULL,
-                      TRUE);
-#endif
-
     tBTM_STATUS status = BTM_CreateSco(
         &p_scb->peer_addr, true, params.packet_types, &p_scb->sco_idx,
         bta_ag_sco_conn_cback, bta_ag_sco_disc_cback);
@@ -574,42 +564,10 @@ void bta_ag_codec_negotiate(tBTA_AG_SCB* p_scb) {
  ******************************************************************************/
 static void bta_ag_sco_event(tBTA_AG_SCB* p_scb, uint8_t event) {
   tBTA_AG_SCO_CB* p_sco = &bta_ag_cb.sco;
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-  BT_HDR* p_buf;
-#endif
-
-#if (BTA_AG_SCO_DEBUG == TRUE)
-  uint8_t in_state = p_sco->state;
-
-  if (event != BTA_AG_SCO_CI_DATA_E) {
-    APPL_TRACE_EVENT("%s: SCO Index 0x%04x, State %d (%s), Event %d (%s)",
-                     __func__, p_scb->sco_idx, p_sco->state,
-                     bta_ag_sco_state_str(p_sco->state), event,
-                     bta_ag_sco_evt_str(event));
-  }
-#else
-  if (event != BTA_AG_SCO_CI_DATA_E) {
-    APPL_TRACE_EVENT("%s: SCO Index 0x%04x, State %d, Event %d", __func__,
-                     p_scb->sco_idx, p_sco->state, event);
-  }
-#endif
-
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-  if (event == BTA_AG_SCO_CI_DATA_E) {
-    while (true) {
-      bta_dm_sco_co_out_data(&p_buf);
-      if (p_buf) {
-        if (p_sco->state == BTA_AG_SCO_OPEN_ST)
-          BTM_WriteScoData(p_sco->p_curr_scb->sco_idx, p_buf);
-        else
-          osi_free(p_buf);
-      } else
-        break;
-    }
-
-    return;
-  }
-#endif
+  uint8_t previous_state = p_sco->state;
+  APPL_TRACE_EVENT("%s: SCO index=0x%04x, state=[%s]0x%02x, event=[%s](%d)",
+                   __func__, p_scb->sco_idx, bta_ag_sco_state_str(p_sco->state),
+                   p_sco->state, bta_ag_sco_evt_str(event), event);
 
   switch (p_sco->state) {
     case BTA_AG_SCO_SHUTDOWN_ST:
@@ -1085,14 +1043,14 @@ static void bta_ag_sco_event(tBTA_AG_SCB* p_scb, uint8_t event) {
     default:
       break;
   }
-#if (BTA_AG_SCO_DEBUG == TRUE)
-  if (p_sco->state != in_state) {
-    APPL_TRACE_EVENT("BTA AG SCO State Change: [%s] -> [%s] after Event [%s]",
-                     bta_ag_sco_state_str(in_state),
-                     bta_ag_sco_state_str(p_sco->state),
-                     bta_ag_sco_evt_str(event));
+  if (p_sco->state != previous_state) {
+    APPL_TRACE_EVENT(
+        "%s: SCO_state_change: [%s(0x%02x)]->[%s(0x%02x)] "
+        "after event [%s(0x%02x)]",
+        __func__, bta_ag_sco_state_str(previous_state), previous_state,
+        bta_ag_sco_state_str(p_sco->state), p_sco->state,
+        bta_ag_sco_evt_str(event), event);
   }
-#endif
 }
 
 /*******************************************************************************
@@ -1152,7 +1110,6 @@ void bta_ag_sco_listen(tBTA_AG_SCB* p_scb, UNUSED_ATTR tBTA_AG_DATA* p_data) {
  ******************************************************************************/
 void bta_ag_sco_open(tBTA_AG_SCB* p_scb, UNUSED_ATTR tBTA_AG_DATA* p_data) {
   uint8_t event;
-
   if (!sco_allowed) {
     APPL_TRACE_DEBUG("%s not opening sco, by policy", __func__);
     return;
@@ -1247,12 +1204,6 @@ void bta_ag_sco_conn_open(tBTA_AG_SCB* p_scb,
 
   bta_sys_sco_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
 
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-  /* open SCO codec if SCO is routed through transport */
-  bta_dm_sco_co_open(bta_ag_scb_to_idx(p_scb), BTA_SCO_OUT_PKT_SIZE,
-                     BTA_AG_CI_SCO_DATA_EVT);
-#endif
-
   /* call app callback */
   bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_OPEN_EVT);
 
@@ -1328,10 +1279,6 @@ void bta_ag_sco_conn_rsp(tBTA_AG_SCB* p_scb,
     /* tell sys to stop av if any */
     bta_sys_sco_use(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     /* When HS initiated SCO, it cannot be WBS. */
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-    /* Configure the transport being used */
-    BTM_ConfigScoPath(resp.input_data_path, bta_ag_sco_read_cback, NULL, TRUE);
-#endif
   }
 
   /* If SCO open was initiated from HS, it must be CVSD */
@@ -1340,87 +1287,19 @@ void bta_ag_sco_conn_rsp(tBTA_AG_SCB* p_scb,
   bta_ag_create_pending_sco(p_scb, bta_ag_cb.sco.is_local);
 }
 
-/*******************************************************************************
- *
- * Function         bta_ag_ci_sco_data
- *
- * Description      Process the SCO data ready callin event
- *
- *
- * Returns          void
- *
- ******************************************************************************/
-void bta_ag_ci_sco_data(UNUSED_ATTR tBTA_AG_SCB* p_scb,
-                        UNUSED_ATTR tBTA_AG_DATA* p_data) {
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-  bta_ag_sco_event(p_scb, BTA_AG_SCO_CI_DATA_E);
-#endif
-}
-
 void bta_ag_set_sco_allowed(tBTA_AG_DATA* p_data) {
   sco_allowed = p_data->api_set_sco_allowed.value;
   APPL_TRACE_DEBUG(sco_allowed ? "sco now allowed" : "sco now not allowed");
 }
 
-/*******************************************************************************
- *  Debugging functions
- ******************************************************************************/
+const RawAddress& bta_ag_get_active_device() { return active_device_addr; }
 
-#if (BTA_AG_SCO_DEBUG == TRUE)
-static char* bta_ag_sco_evt_str(uint8_t event) {
-  switch (event) {
-    case BTA_AG_SCO_LISTEN_E:
-      return "Listen Request";
-    case BTA_AG_SCO_OPEN_E:
-      return "Open Request";
-    case BTA_AG_SCO_XFER_E:
-      return "Transfer Request";
-    case BTA_AG_SCO_CN_DONE_E:
-      return "Codec Negotiation Done";
-    case BTA_AG_SCO_REOPEN_E:
-      return "Reopen Request";
-    case BTA_AG_SCO_CLOSE_E:
-      return "Close Request";
-    case BTA_AG_SCO_SHUTDOWN_E:
-      return "Shutdown Request";
-    case BTA_AG_SCO_CONN_OPEN_E:
-      return "Opened";
-    case BTA_AG_SCO_CONN_CLOSE_E:
-      return "Closed";
-    case BTA_AG_SCO_CI_DATA_E:
-      return "Sco Data";
-    default:
-      return "Unknown SCO Event";
+void bta_clear_active_device() { active_device_addr = RawAddress::kEmpty; }
+
+void bta_ag_api_set_active_device(tBTA_AG_DATA* p_data) {
+  if (p_data->api_set_active_device.active_device_addr.IsEmpty()) {
+    APPL_TRACE_ERROR("%s: empty device", __func__);
+    return;
   }
+  active_device_addr = p_data->api_set_active_device.active_device_addr;
 }
-
-static char* bta_ag_sco_state_str(uint8_t state) {
-  switch (state) {
-    case BTA_AG_SCO_SHUTDOWN_ST:
-      return "Shutdown";
-    case BTA_AG_SCO_LISTEN_ST:
-      return "Listening";
-    case BTA_AG_SCO_CODEC_ST:
-      return "Codec Negotiation";
-    case BTA_AG_SCO_OPENING_ST:
-      return "Opening";
-    case BTA_AG_SCO_OPEN_CL_ST:
-      return "Open while closing";
-    case BTA_AG_SCO_OPEN_XFER_ST:
-      return "Opening while Transferring";
-    case BTA_AG_SCO_OPEN_ST:
-      return "Open";
-    case BTA_AG_SCO_CLOSING_ST:
-      return "Closing";
-    case BTA_AG_SCO_CLOSE_OP_ST:
-      return "Close while Opening";
-    case BTA_AG_SCO_CLOSE_XFER_ST:
-      return "Close while Transferring";
-    case BTA_AG_SCO_SHUTTING_ST:
-      return "Shutting Down";
-    default:
-      return "Unknown SCO State";
-  }
-}
-
-#endif /* (BTA_AG_SCO_DEBUG) */
