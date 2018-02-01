@@ -25,11 +25,11 @@
 
 #include <cstring>
 
+#include <base/bind.h>
+
 #include "bt_common.h"
 #include "bta_ag_api.h"
 #include "bta_ag_int.h"
-#include "bta_api.h"
-#include "bta_sys.h"
 #include "btm_api.h"
 #include "osi/include/osi.h"
 #include "port_api.h"
@@ -43,18 +43,25 @@
 void bta_ag_port_cback_1(uint32_t code, uint16_t port_handle);
 void bta_ag_port_cback_2(uint32_t code, uint16_t port_handle);
 void bta_ag_port_cback_3(uint32_t code, uint16_t port_handle);
-
+void bta_ag_port_cback_4(uint32_t code, uint16_t port_handle);
+void bta_ag_port_cback_5(uint32_t code, uint16_t port_handle);
+void bta_ag_port_cback_6(uint32_t code, uint16_t port_handle);
 void bta_ag_mgmt_cback_1(uint32_t code, uint16_t port_handle);
 void bta_ag_mgmt_cback_2(uint32_t code, uint16_t port_handle);
 void bta_ag_mgmt_cback_3(uint32_t code, uint16_t port_handle);
+void bta_ag_mgmt_cback_4(uint32_t code, uint16_t port_handle);
+void bta_ag_mgmt_cback_5(uint32_t code, uint16_t port_handle);
+void bta_ag_mgmt_cback_6(uint32_t code, uint16_t port_handle);
 
 /* rfcomm callback function tables */
 typedef tPORT_CALLBACK* tBTA_AG_PORT_CBACK;
 const tBTA_AG_PORT_CBACK bta_ag_port_cback_tbl[] = {
-    bta_ag_port_cback_1, bta_ag_port_cback_2, bta_ag_port_cback_3};
+    bta_ag_port_cback_1, bta_ag_port_cback_2, bta_ag_port_cback_3,
+    bta_ag_port_cback_4, bta_ag_port_cback_5, bta_ag_port_cback_6};
 
 const tBTA_AG_PORT_CBACK bta_ag_mgmt_cback_tbl[] = {
-    bta_ag_mgmt_cback_1, bta_ag_mgmt_cback_2, bta_ag_mgmt_cback_3};
+    bta_ag_mgmt_cback_1, bta_ag_mgmt_cback_2, bta_ag_mgmt_cback_3,
+    bta_ag_mgmt_cback_4, bta_ag_mgmt_cback_5, bta_ag_mgmt_cback_6};
 
 /*******************************************************************************
  *
@@ -68,9 +75,7 @@ const tBTA_AG_PORT_CBACK bta_ag_mgmt_cback_tbl[] = {
  ******************************************************************************/
 static void bta_ag_port_cback(UNUSED_ATTR uint32_t code, uint16_t port_handle,
                               uint16_t handle) {
-  tBTA_AG_SCB* p_scb;
-
-  p_scb = bta_ag_scb_by_idx(handle);
+  tBTA_AG_SCB* p_scb = bta_ag_scb_by_idx(handle);
   if (p_scb != nullptr) {
     /* ignore port events for port handles other than connected handle */
     if (port_handle != p_scb->conn_handle) {
@@ -79,11 +84,9 @@ static void bta_ag_port_cback(UNUSED_ATTR uint32_t code, uint16_t port_handle,
           port_handle, p_scb->conn_handle, handle);
       return;
     }
-
-    BT_HDR* p_buf = (BT_HDR*)osi_malloc(sizeof(BT_HDR));
-    p_buf->event = BTA_AG_RFC_DATA_EVT;
-    p_buf->layer_specific = handle;
-    bta_sys_sendmsg(p_buf);
+    do_in_bta_thread(FROM_HERE,
+                     base::Bind(&bta_ag_sm_execute_by_handle, handle,
+                                BTA_AG_RFC_DATA_EVT, tBTA_AG_DATA::kEmpty));
   }
 }
 
@@ -142,18 +145,17 @@ static void bta_ag_mgmt_cback(uint32_t code, uint16_t port_handle,
       event = BTA_AG_RFC_SRV_CLOSE_EVT;
     }
 
-    tBTA_AG_RFC* p_buf = (tBTA_AG_RFC*)osi_malloc(sizeof(tBTA_AG_RFC));
-    p_buf->hdr.event = event;
-    p_buf->hdr.layer_specific = handle;
-    p_buf->port_handle = port_handle;
-    bta_sys_sendmsg(p_buf);
+    tBTA_AG_DATA data = {};
+    data.rfc.port_handle = port_handle;
+    do_in_bta_thread(FROM_HERE, base::Bind(&bta_ag_sm_execute_by_handle, handle,
+                                           event, data));
   }
 }
 
 /*******************************************************************************
  *
- * Function         bta_ag_port_cback_1 to 3
- *                  bta_ag_mgmt_cback_1 to 3
+ * Function         bta_ag_port_cback_1 to 6
+ *                  bta_ag_mgmt_cback_1 to 6
  *
  * Description      RFCOMM callback functions.  This is an easy way to
  *                  distinguish scb from the callback.
@@ -162,23 +164,41 @@ static void bta_ag_mgmt_cback(uint32_t code, uint16_t port_handle,
  * Returns          void
  *
  ******************************************************************************/
-void bta_ag_mgmt_cback_1(uint32_t code, uint16_t handle) {
-  bta_ag_mgmt_cback(code, handle, 1);
+void bta_ag_mgmt_cback_1(uint32_t code, uint16_t port_handle) {
+  bta_ag_mgmt_cback(code, port_handle, 1);
 }
-void bta_ag_mgmt_cback_2(uint32_t code, uint16_t handle) {
-  bta_ag_mgmt_cback(code, handle, 2);
+void bta_ag_mgmt_cback_2(uint32_t code, uint16_t port_handle) {
+  bta_ag_mgmt_cback(code, port_handle, 2);
 }
-void bta_ag_mgmt_cback_3(uint32_t code, uint16_t handle) {
-  bta_ag_mgmt_cback(code, handle, 3);
+void bta_ag_mgmt_cback_3(uint32_t code, uint16_t port_handle) {
+  bta_ag_mgmt_cback(code, port_handle, 3);
 }
-void bta_ag_port_cback_1(uint32_t code, uint16_t handle) {
-  bta_ag_port_cback(code, handle, 1);
+void bta_ag_mgmt_cback_4(uint32_t code, uint16_t port_handle) {
+  bta_ag_mgmt_cback(code, port_handle, 4);
 }
-void bta_ag_port_cback_2(uint32_t code, uint16_t handle) {
-  bta_ag_port_cback(code, handle, 2);
+void bta_ag_mgmt_cback_5(uint32_t code, uint16_t port_handle) {
+  bta_ag_mgmt_cback(code, port_handle, 5);
 }
-void bta_ag_port_cback_3(uint32_t code, uint16_t handle) {
-  bta_ag_port_cback(code, handle, 3);
+void bta_ag_mgmt_cback_6(uint32_t code, uint16_t port_handle) {
+  bta_ag_mgmt_cback(code, port_handle, 6);
+}
+void bta_ag_port_cback_1(uint32_t code, uint16_t port_handle) {
+  bta_ag_port_cback(code, port_handle, 1);
+}
+void bta_ag_port_cback_2(uint32_t code, uint16_t port_handle) {
+  bta_ag_port_cback(code, port_handle, 2);
+}
+void bta_ag_port_cback_3(uint32_t code, uint16_t port_handle) {
+  bta_ag_port_cback(code, port_handle, 3);
+}
+void bta_ag_port_cback_4(uint32_t code, uint16_t port_handle) {
+  bta_ag_port_cback(code, port_handle, 4);
+}
+void bta_ag_port_cback_5(uint32_t code, uint16_t port_handle) {
+  bta_ag_port_cback(code, port_handle, 5);
+}
+void bta_ag_port_cback_6(uint32_t code, uint16_t port_handle) {
+  bta_ag_port_cback(code, port_handle, 6);
 }
 
 /*******************************************************************************
@@ -247,10 +267,8 @@ void bta_ag_start_servers(tBTA_AG_SCB* p_scb, tBTA_SERVICE_MASK services) {
  *
  ******************************************************************************/
 void bta_ag_close_servers(tBTA_AG_SCB* p_scb, tBTA_SERVICE_MASK services) {
-  int i;
-
   services >>= BTA_HSP_SERVICE_ID;
-  for (i = 0; i < BTA_AG_NUM_IDX && services != 0; i++, services >>= 1) {
+  for (int i = 0; i < BTA_AG_NUM_IDX && services != 0; i++, services >>= 1) {
     /* if service is set in mask */
     if (services & 1) {
       RFCOMM_RemoveServer(p_scb->serv_handle[i]);
@@ -290,7 +308,7 @@ bool bta_ag_is_server_closed(tBTA_AG_SCB* p_scb) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_ag_rfc_do_open(tBTA_AG_SCB* p_scb, tBTA_AG_DATA* p_data) {
+void bta_ag_rfc_do_open(tBTA_AG_SCB* p_scb, const tBTA_AG_DATA& data) {
   BTM_SetSecurityLevel(true, "", bta_ag_sec_id[p_scb->conn_service],
                        p_scb->cli_sec_mask, BT_PSM_RFCOMM, BTM_SEC_PROTO_RFCOMM,
                        p_scb->peer_scn);
@@ -303,10 +321,9 @@ void bta_ag_rfc_do_open(tBTA_AG_SCB* p_scb, tBTA_AG_DATA* p_data) {
     bta_ag_setup_port(p_scb, p_scb->conn_handle);
     APPL_TRACE_DEBUG("bta_ag_rfc_do_open : conn_handle = %d",
                      p_scb->conn_handle);
-  }
-  /* RFCOMM create connection failed; send ourselves RFCOMM close event */
-  else {
-    bta_ag_sm_execute(p_scb, BTA_AG_RFC_CLOSE_EVT, p_data);
+  } else {
+    /* RFCOMM create connection failed; send ourselves RFCOMM close event */
+    bta_ag_sm_execute(p_scb, BTA_AG_RFC_CLOSE_EVT, data);
   }
 }
 
@@ -320,17 +337,18 @@ void bta_ag_rfc_do_open(tBTA_AG_SCB* p_scb, tBTA_AG_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_ag_rfc_do_close(tBTA_AG_SCB* p_scb, UNUSED_ATTR tBTA_AG_DATA* p_data) {
+void bta_ag_rfc_do_close(tBTA_AG_SCB* p_scb,
+                         UNUSED_ATTR const tBTA_AG_DATA& data) {
   if (p_scb->conn_handle) {
     RFCOMM_RemoveConnection(p_scb->conn_handle);
   } else {
     /* Close API was called while AG is in Opening state.               */
     /* Need to trigger the state machine to send callback to the app    */
     /* and move back to INIT state.                                     */
-    tBTA_AG_RFC* p_buf = (tBTA_AG_RFC*)osi_malloc(sizeof(tBTA_AG_RFC));
-    p_buf->hdr.event = BTA_AG_RFC_CLOSE_EVT;
-    p_buf->hdr.layer_specific = bta_ag_scb_to_idx(p_scb);
-    bta_sys_sendmsg(p_buf);
+    do_in_bta_thread(
+        FROM_HERE,
+        base::Bind(&bta_ag_sm_execute_by_handle, bta_ag_scb_to_idx(p_scb),
+                   BTA_AG_RFC_CLOSE_EVT, tBTA_AG_DATA::kEmpty));
 
     /* Cancel SDP if it had been started. */
     /*

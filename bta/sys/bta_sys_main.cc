@@ -185,7 +185,7 @@ void bta_sys_init(void) {
   bta_sys_register(BTA_ID_SYS, &bta_sys_hw_reg);
 
   /* register for BTM notifications */
-  BTM_RegisterForDeviceStatusNotif((tBTM_DEV_STATUS_CB*)&bta_sys_hw_btm_cback);
+  BTM_RegisterForDeviceStatusNotif(&bta_sys_hw_btm_cback);
 
 #if (defined BTA_AR_INCLUDED) && (BTA_AR_INCLUDED == TRUE)
   bta_ar_init();
@@ -599,7 +599,7 @@ void bta_sys_disable(tBTA_SYS_HW_MODULE module) {
 
   switch (module) {
     case BTA_SYS_HW_BLUETOOTH:
-      bta_id = BTA_ID_DM;
+      bta_id = BTA_ID_DM_SEARCH;
       bta_id_max = BTA_ID_BLUETOOTH_MAX;
       break;
     default:
