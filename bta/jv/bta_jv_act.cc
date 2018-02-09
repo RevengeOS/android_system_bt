@@ -46,6 +46,7 @@
 #include "port_api.h"
 #include "rfcdefs.h"
 #include "sdp_api.h"
+#include "stack/l2cap/l2c_int.h"
 #include "utl.h"
 
 #include "osi/include/osi.h"
@@ -531,7 +532,7 @@ static tBTA_JV_PM_CB* bta_jv_alloc_set_pm_profile_cb(uint32_t jv_handle,
   }
   LOG(WARNING) << __func__ << ": handle=" << loghex(jv_handle)
                << ", app_id=" << app_id << ", return NULL";
-  return (tBTA_JV_PM_CB*)NULL;
+  return NULL;
 }
 
 /*******************************************************************************
@@ -687,6 +688,10 @@ void bta_jv_get_channel_id(
       }
       break;
     case BTA_JV_CONN_TYPE_L2CAP_LE:
+      psm = L2CA_AllocateLePSM();
+      if (psm == 0) {
+        LOG(ERROR) << __func__ << ": Error: No free LE PSM available";
+      }
       break;
     default:
       break;
@@ -715,7 +720,8 @@ void bta_jv_free_scn(int32_t type /* One of BTA_JV_CONN_TYPE_ */,
       bta_jv_set_free_psm(scn);
       break;
     case BTA_JV_CONN_TYPE_L2CAP_LE:
-      // TODO: Not yet implemented...
+      VLOG(2) << __func__ << ": type=BTA_JV_CONN_TYPE_L2CAP_LE. psm=" << scn;
+      L2CA_FreeLePSM(scn);
       break;
     default:
       break;
@@ -843,7 +849,8 @@ void bta_jv_delete_record(uint32_t handle) {
  * Returns      void
  *
  ******************************************************************************/
-static void bta_jv_l2cap_client_cback(uint16_t gap_handle, uint16_t event) {
+static void bta_jv_l2cap_client_cback(uint16_t gap_handle, uint16_t event,
+                                      tGAP_CB_DATA* data) {
   tBTA_JV_L2C_CB* p_cb = &bta_jv_cb.l2c_cb[gap_handle];
   tBTA_JV evt_data;
 
@@ -991,7 +998,8 @@ void bta_jv_l2cap_close(uint32_t handle, tBTA_JV_L2C_CB* p_cb) {
  * Returns          void
  *
  ******************************************************************************/
-static void bta_jv_l2cap_server_cback(uint16_t gap_handle, uint16_t event) {
+static void bta_jv_l2cap_server_cback(uint16_t gap_handle, uint16_t event,
+                                      tGAP_CB_DATA* data) {
   tBTA_JV_L2C_CB* p_cb = &bta_jv_cb.l2c_cb[gap_handle];
   tBTA_JV evt_data;
   tBTA_JV_L2CAP_CBACK* p_cback;
@@ -1132,8 +1140,8 @@ void bta_jv_l2cap_stop_server(uint16_t local_psm, uint32_t l2cap_socket_id) {
 }
 
 /* Write data to an L2CAP connection */
-void bta_jv_l2cap_write(uint32_t handle, uint32_t req_id, uint8_t* p_data,
-                        uint16_t len, uint32_t user_id, tBTA_JV_L2C_CB* p_cb) {
+void bta_jv_l2cap_write(uint32_t handle, uint32_t req_id, BT_HDR* msg,
+                        uint32_t user_id, tBTA_JV_L2C_CB* p_cb) {
   /* As we check this callback exists before the tBTA_JV_API_L2CAP_WRITE can be
    * send through the API this check should not be needed. But the API is not
    * designed to be used (safely at least) in a multi-threaded scheduler, hence
@@ -1154,6 +1162,7 @@ void bta_jv_l2cap_write(uint32_t handle, uint32_t req_id, uint8_t* p_data,
      * channel is disconnected after the API function is called, but before the
      * message is handled. */
     LOG(ERROR) << __func__ << ": p_cb->p_cback == NULL";
+    osi_free(msg);
     return;
   }
 
@@ -1161,14 +1170,21 @@ void bta_jv_l2cap_write(uint32_t handle, uint32_t req_id, uint8_t* p_data,
   evt_data.status = BTA_JV_FAILURE;
   evt_data.handle = handle;
   evt_data.req_id = req_id;
-  evt_data.p_data = p_data;
   evt_data.cong = p_cb->cong;
-  evt_data.len = 0;
+  evt_data.len = msg->len;
+
   bta_jv_pm_conn_busy(p_cb->p_pm_cb);
-  if (!evt_data.cong &&
-      BT_PASS == GAP_ConnWriteData(handle, p_data, len, &evt_data.len)) {
-    evt_data.status = BTA_JV_SUCCESS;
+
+  // TODO: this was set only for non-fixed channel packets. Is that needed ?
+  msg->event = BT_EVT_TO_BTU_SP_DATA;
+
+  if (evt_data.cong) {
+    osi_free(msg);
+  } else {
+    if (GAP_ConnWriteData(handle, msg) == BT_PASS)
+      evt_data.status = BTA_JV_SUCCESS;
   }
+
   tBTA_JV bta_jv;
   bta_jv.l2c_write = evt_data;
   p_cb->p_cback(BTA_JV_L2CAP_WRITE_EVT, &bta_jv, user_id);
@@ -1176,20 +1192,14 @@ void bta_jv_l2cap_write(uint32_t handle, uint32_t req_id, uint8_t* p_data,
 
 /* Write data to an L2CAP connection using Fixed channels */
 void bta_jv_l2cap_write_fixed(uint16_t channel, const RawAddress& addr,
-                              uint32_t req_id, uint8_t* p_data, uint16_t len,
-                              uint32_t user_id, tBTA_JV_L2CAP_CBACK* p_cback) {
+                              uint32_t req_id, BT_HDR* msg, uint32_t user_id,
+                              tBTA_JV_L2CAP_CBACK* p_cback) {
   tBTA_JV_L2CAP_WRITE_FIXED evt_data;
   evt_data.status = BTA_JV_FAILURE;
   evt_data.channel = channel;
   evt_data.addr = addr;
   evt_data.req_id = req_id;
-  evt_data.p_data = p_data;
   evt_data.len = 0;
-
-  BT_HDR* msg = (BT_HDR*)osi_malloc(sizeof(BT_HDR) + len + L2CAP_MIN_OFFSET);
-  memcpy(((uint8_t*)(msg + 1)) + L2CAP_MIN_OFFSET, p_data, len);
-  msg->len = len;
-  msg->offset = L2CAP_MIN_OFFSET;
 
   L2CA_SendFixedChnlData(channel, addr, msg);
 
