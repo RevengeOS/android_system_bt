@@ -840,7 +840,7 @@ void l2c_lcc_proc_pdu(tL2C_CCB* p_ccb, BT_HDR* p_buf) {
       return;
     }
 
-    p_data = (BT_HDR*)osi_malloc(L2CAP_MAX_BUF_SIZE);
+    p_data = (BT_HDR*)osi_malloc(BT_HDR_SIZE + sdu_length);
     if (p_data == NULL) {
       osi_free(p_buf);
       return;
@@ -1452,7 +1452,8 @@ static bool do_sar_reassembly(tL2C_CCB* p_ccb, BT_HDR* p_buf,
                             p_fcrb->rx_sdu_len, p_fcrb->rx_sdu_len);
         packet_ok = false;
       } else {
-        p_fcrb->p_rx_sdu = (BT_HDR*)osi_malloc(L2CAP_MAX_BUF_SIZE);
+        p_fcrb->p_rx_sdu = (BT_HDR*)osi_malloc(
+            BT_HDR_SIZE + OBX_BUF_MIN_OFFSET + p_fcrb->rx_sdu_len);
         p_fcrb->p_rx_sdu->offset = OBX_BUF_MIN_OFFSET;
         p_fcrb->p_rx_sdu->len = 0;
       }
@@ -1794,7 +1795,7 @@ BT_HDR* l2c_fcr_get_next_xmit_sdu_seg(tL2C_CCB* p_ccb,
  * returned PDU is last piece from this SDU.*/
 BT_HDR* l2c_lcc_get_next_xmit_sdu_seg(tL2C_CCB* p_ccb,
                                       bool* last_piece_of_sdu) {
-  uint16_t max_pdu = p_ccb->peer_conn_cfg.mps;
+  uint16_t max_pdu = p_ccb->peer_conn_cfg.mps - 4 /* Length and CID */;
 
   BT_HDR* p_buf = (BT_HDR*)fixed_queue_try_peek_first(p_ccb->xmit_hold_q);
   bool first_pdu = (p_buf->event == 0) ? true : false;
