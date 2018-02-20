@@ -104,13 +104,6 @@ const Uuid UUID_HEARING_AID =
 #error "default btif local name size exceeds stack supported length"
 #endif
 
-#if (BTA_HOST_INTERLEAVE_SEARCH == TRUE)
-#define BTIF_DM_INTERLEAVE_DURATION_BR_ONE 2
-#define BTIF_DM_INTERLEAVE_DURATION_LE_ONE 2
-#define BTIF_DM_INTERLEAVE_DURATION_BR_TWO 3
-#define BTIF_DM_INTERLEAVE_DURATION_LE_TWO 4
-#endif
-
 #define ENCRYPTED_BREDR 2
 #define ENCRYPTED_LE 4
 
@@ -949,6 +942,10 @@ static void btif_dm_ssp_cfm_req_evt(tBTA_DM_SP_CFM_REQ* p_ssp_cfm_req) {
    */
   bond_state_changed(BT_STATUS_SUCCESS, bd_addr, BT_BOND_STATE_BONDING);
 
+  BTIF_TRACE_EVENT("%s: just_works:%d, loc_auth_req=%d, rmt_auth_req=%d",
+                   __func__, p_ssp_cfm_req->just_works,
+                   p_ssp_cfm_req->loc_auth_req, p_ssp_cfm_req->rmt_auth_req);
+
   /* if just_works and bonding bit is not set treat this as temporary */
   if (p_ssp_cfm_req->just_works &&
       !(p_ssp_cfm_req->loc_auth_req & BTM_AUTH_BONDS) &&
@@ -1043,7 +1040,9 @@ static void btif_dm_auth_cmpl_evt(tBTA_DM_AUTH_CMPL* p_auth_cmpl) {
   bt_bond_state_t state = BT_BOND_STATE_NONE;
   bool skip_sdp = false;
 
-  BTIF_TRACE_DEBUG("%s: bond state=%d", __func__, pairing_cb.state);
+  BTIF_TRACE_DEBUG("%s: bond state=%d, success=%d, key_present=%d", __func__,
+                   pairing_cb.state, p_auth_cmpl->success,
+                   p_auth_cmpl->key_present);
 
   RawAddress bd_addr = p_auth_cmpl->bd_addr;
   if ((p_auth_cmpl->success) && (p_auth_cmpl->key_present)) {
@@ -2153,12 +2152,6 @@ bt_status_t btif_dm_start_discovery(void) {
 
   /* Set inquiry params and call API */
   inq_params.mode = BTA_DM_GENERAL_INQUIRY | BTA_BLE_GENERAL_INQUIRY;
-#if (BTA_HOST_INTERLEAVE_SEARCH == TRUE)
-  inq_params.intl_duration[0] = BTIF_DM_INTERLEAVE_DURATION_BR_ONE;
-  inq_params.intl_duration[1] = BTIF_DM_INTERLEAVE_DURATION_LE_ONE;
-  inq_params.intl_duration[2] = BTIF_DM_INTERLEAVE_DURATION_BR_TWO;
-  inq_params.intl_duration[3] = BTIF_DM_INTERLEAVE_DURATION_LE_TWO;
-#endif
   inq_params.duration = BTIF_DM_DEFAULT_INQ_MAX_DURATION;
 
   inq_params.max_resps = BTIF_DM_DEFAULT_INQ_MAX_RESULTS;
@@ -2479,7 +2472,8 @@ bt_status_t btif_dm_get_remote_services(const RawAddress& remote_addr) {
  ******************************************************************************/
 bt_status_t btif_dm_get_remote_services_by_transport(RawAddress* remote_addr,
                                                      const int transport) {
-  BTIF_TRACE_EVENT("%s", __func__);
+  BTIF_TRACE_EVENT("%s: transport=%d, remote_addr=%s", __func__, transport,
+                   remote_addr->ToString().c_str());
 
   /* Set the mask extension */
   tBTA_SERVICE_MASK_EXT mask_ext;
