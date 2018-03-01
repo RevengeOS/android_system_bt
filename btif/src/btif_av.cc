@@ -52,8 +52,6 @@
  *****************************************************************************/
 static const std::string kBtifAvSourceServiceName = "Advanced Audio Source";
 static const std::string kBtifAvSinkServiceName = "Advanced Audio Sink";
-static const std::string kBtifAvMaxConnectedAudioDevices =
-    "persist.bluetooth.maxconnectedaudiodevices";
 static constexpr int kDefaultMaxConnectedAudioDevices = 1;
 static constexpr tBTA_AV_HNDL kBtaHandleUnknown = 0;
 
@@ -326,7 +324,7 @@ class BtifAvSource {
 
   btav_source_callbacks_t* Callbacks() { return callbacks_; }
   bt_status_t Init(
-      btav_source_callbacks_t* callbacks,
+      btav_source_callbacks_t* callbacks, int max_connected_audio_devices,
       const std::vector<btav_a2dp_codec_config_t>& codec_priorities);
   void Cleanup();
 
@@ -810,28 +808,32 @@ bool BtifAvPeer::IsStreaming() const {
 BtifAvSource::~BtifAvSource() { CleanupAllPeers(); }
 
 bt_status_t BtifAvSource::Init(
-    btav_source_callbacks_t* callbacks,
+    btav_source_callbacks_t* callbacks, int max_connected_audio_devices,
     const std::vector<btav_a2dp_codec_config_t>& codec_priorities) {
+  LOG_INFO(LOG_TAG, "%s: max_connected_audio_devices=%d", __PRETTY_FUNCTION__,
+           max_connected_audio_devices);
   if (enabled_) return BT_STATUS_SUCCESS;
 
   CleanupAllPeers();
-  max_connected_peers_ =
-      osi_property_get_int32(kBtifAvMaxConnectedAudioDevices.c_str(),
-                             kDefaultMaxConnectedAudioDevices);
+  max_connected_peers_ = max_connected_audio_devices;
   callbacks_ = callbacks;
   codec_priorities_ = codec_priorities;
   bta_av_co_init(codec_priorities_);
 
+  if (!btif_a2dp_source_init()) {
+    return BT_STATUS_FAIL;
+  }
   btif_enable_service(BTA_A2DP_SOURCE_SERVICE_ID);
   enabled_ = true;
   return BT_STATUS_SUCCESS;
 }
 
 void BtifAvSource::Cleanup() {
+  LOG_INFO(LOG_TAG, "%s", __PRETTY_FUNCTION__);
   if (!enabled_) return;
 
   btif_queue_cleanup(UUID_SERVCLASS_AUDIO_SOURCE);
-  do_in_jni_thread(FROM_HERE, base::Bind(&btif_a2dp_source_shutdown));
+  do_in_jni_thread(FROM_HERE, base::Bind(&btif_a2dp_source_cleanup));
 
   btif_disable_service(BTA_A2DP_SOURCE_SERVICE_ID);
   CleanupAllPeers();
@@ -982,24 +984,27 @@ void BtifAvSource::BtaHandleRegistered(uint8_t peer_id,
 BtifAvSink::~BtifAvSink() { CleanupAllPeers(); }
 
 bt_status_t BtifAvSink::Init(btav_sink_callbacks_t* callbacks) {
+  LOG_INFO(LOG_TAG, "%s", __PRETTY_FUNCTION__);
   if (enabled_) return BT_STATUS_SUCCESS;
 
   CleanupAllPeers();
-  max_connected_peers_ =
-      osi_property_get_int32(kBtifAvMaxConnectedAudioDevices.c_str(),
-                             kDefaultMaxConnectedAudioDevices);
+  max_connected_peers_ = kDefaultMaxConnectedAudioDevices;
   callbacks_ = callbacks;
 
+  if (!btif_a2dp_sink_init()) {
+    return BT_STATUS_FAIL;
+  }
   btif_enable_service(BTA_A2DP_SINK_SERVICE_ID);
   enabled_ = true;
   return BT_STATUS_SUCCESS;
 }
 
 void BtifAvSink::Cleanup() {
+  LOG_INFO(LOG_TAG, "%s", __PRETTY_FUNCTION__);
   if (!enabled_) return;
 
   btif_queue_cleanup(UUID_SERVCLASS_AUDIO_SINK);
-  do_in_jni_thread(FROM_HERE, base::Bind(&btif_a2dp_sink_shutdown));
+  do_in_jni_thread(FROM_HERE, base::Bind(&btif_a2dp_sink_cleanup));
 
   btif_disable_service(BTA_A2DP_SINK_SERVICE_ID);
   CleanupAllPeers();
@@ -2393,10 +2398,11 @@ static void bta_av_sink_media_callback(tBTA_AV_EVT event,
 
 // Initializes the AV interface for source mode
 static bt_status_t init_src(
-    btav_source_callbacks_t* callbacks,
+    btav_source_callbacks_t* callbacks, int max_connected_audio_devices,
     std::vector<btav_a2dp_codec_config_t> codec_priorities) {
   BTIF_TRACE_EVENT("%s", __func__);
-  return btif_av_source.Init(callbacks, codec_priorities);
+  return btif_av_source.Init(callbacks, max_connected_audio_devices,
+                             codec_priorities);
 }
 
 // Initializes the AV interface for sink mode
@@ -2723,6 +2729,11 @@ bt_status_t btif_av_source_execute_service(bool enable) {
     // while registering.
     tBTA_AV_FEAT features = BTA_AV_FEAT_RCTG | BTA_AV_FEAT_METADATA |
                             BTA_AV_FEAT_VENDOR | BTA_AV_FEAT_NO_SCO_SSPD;
+
+    if (delay_reporting_enabled()) {
+      features |= BTA_AV_FEAT_DELAY_RPT;
+    }
+
 #if (AVRC_ADV_CTRL_INCLUDED == TRUE)
     features |= BTA_AV_FEAT_RCCT | BTA_AV_FEAT_ADV_CTRL | BTA_AV_FEAT_BROWSE;
 #endif
@@ -2975,3 +2986,9 @@ void btif_debug_av_dump(int fd) {
   btif_debug_av_source_dump(fd);
   btif_debug_av_sink_dump(fd);
 }
+
+void btif_av_set_audio_delay(uint16_t delay) {
+  btif_a2dp_control_set_audio_delay(delay);
+}
+
+void btif_av_reset_audio_delay(void) { btif_a2dp_control_reset_audio_delay(); }
