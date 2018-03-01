@@ -132,11 +132,6 @@ cc_test {
                 "test/stub_ipc_handler_binder.cc",
             ],
         },
-        darwin: {
-            srcs: [
-                "test/stub_ipc_handler_linux.cc",
-            ],
-        },
         linux_glibc: {
             srcs: btserviceLinuxSrc + [
                 // TODO(bcf): Fix this test.
