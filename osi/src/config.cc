@@ -17,6 +17,7 @@
  ******************************************************************************/
 
 #include "osi/include/config.h"
+#include "log/log.h"
 
 #include <base/files/file_path.h>
 #include <base/logging.h>
@@ -114,6 +115,16 @@ int config_get_int(const config_t& config, const std::string& section,
   return (*endptr == '\0') ? ret : def_value;
 }
 
+uint64_t config_get_uint64(const config_t& config, const std::string& section,
+                           const std::string& key, uint64_t def_value) {
+  const entry_t* entry = entry_find(config, section, key);
+  if (!entry) return def_value;
+
+  char* endptr;
+  uint64_t ret = strtoull(entry->value.c_str(), &endptr, 0);
+  return (*endptr == '\0') ? ret : def_value;
+}
+
 bool config_get_bool(const config_t& config, const std::string& section,
                      const std::string& key, bool def_value) {
   const entry_t* entry = entry_find(config, section, key);
@@ -140,6 +151,11 @@ void config_set_int(config_t* config, const std::string& section,
   config_set_string(config, section, key, std::to_string(value));
 }
 
+void config_set_uint64(config_t* config, const std::string& section,
+                       const std::string& key, uint64_t value) {
+  config_set_string(config, section, key, std::to_string(value));
+}
+
 void config_set_bool(config_t* config, const std::string& section,
                      const std::string& key, bool value) {
   config_set_string(config, section, key, value ? "true" : "false");
@@ -155,14 +171,23 @@ void config_set_string(config_t* config, const std::string& section,
     sec = std::prev(config->sections.end());
   }
 
+  std::string value_no_newline;
+  size_t newline_position = value.find("\n");
+  if (newline_position != std::string::npos) {
+    android_errorWriteLog(0x534e4554, "70808273");
+    value_no_newline = value.substr(0, newline_position);
+  } else {
+    value_no_newline = value;
+  }
+
   for (entry_t& entry : sec->entries) {
     if (entry.key == key) {
-      entry.value = value;
+      entry.value = value_no_newline;
       return;
     }
   }
 
-  sec->entries.emplace_back(entry_t{.key = key, .value = value});
+  sec->entries.emplace_back(entry_t{.key = key, .value = value_no_newline});
 }
 
 bool config_remove_section(config_t* config, const std::string& section) {

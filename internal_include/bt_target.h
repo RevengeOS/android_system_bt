@@ -84,7 +84,7 @@
 #endif
 
 #ifndef AVDT_VERSION
-#define AVDT_VERSION 0x0102
+#define AVDT_VERSION 0x0103
 #endif
 
 #ifndef BTA_AG_AT_MAX_LEN
@@ -105,11 +105,6 @@
 /* TRUE to use SCMS-T content protection */
 #ifndef BTA_AV_CO_CP_SCMS_T
 #define BTA_AV_CO_CP_SCMS_T FALSE
-#endif
-
-/* This feature is used to enable interleaved scan */
-#ifndef BTA_HOST_INTERLEAVE_SEARCH
-#define BTA_HOST_INTERLEAVE_SEARCH FALSE
 #endif
 
 #ifndef BTA_DM_SDP_DB_SIZE

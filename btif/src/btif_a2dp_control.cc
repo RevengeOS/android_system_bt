@@ -37,6 +37,12 @@
 
 #define A2DP_DATA_READ_POLL_MS 10
 
+struct {
+  uint64_t total_bytes_read = 0;
+  uint16_t audio_delay = 0;
+  struct timespec timestamp = {};
+} delay_report_stats;
+
 static void btif_a2dp_data_cb(tUIPC_CH_ID ch_id, tUIPC_EVENT event);
 static void btif_a2dp_ctrl_cb(tUIPC_CH_ID ch_id, tUIPC_EVENT event);
 
@@ -44,13 +50,13 @@ static void btif_a2dp_ctrl_cb(tUIPC_CH_ID ch_id, tUIPC_EVENT event);
 static tA2DP_CTRL_CMD a2dp_cmd_pending = A2DP_CTRL_CMD_NONE;
 
 void btif_a2dp_control_init(void) {
-  UIPC_Init(NULL);
+  UIPC_Init(NULL, UIPC_USER_A2DP);
   UIPC_Open(UIPC_CH_ID_AV_CTRL, btif_a2dp_ctrl_cb);
 }
 
 void btif_a2dp_control_cleanup(void) {
   /* This calls blocks until UIPC is fully closed */
-  UIPC_Close(UIPC_CH_ID_ALL);
+  UIPC_Close(UIPC_CH_ID_ALL, UIPC_USER_A2DP);
 }
 
 static void btif_a2dp_recv_ctrl_data(void) {
@@ -64,7 +70,7 @@ static void btif_a2dp_recv_ctrl_data(void) {
   /* detach on ctrl channel means audioflinger process was terminated */
   if (n == 0) {
     APPL_TRACE_WARNING("%s: CTRL CH DETACHED", __func__);
-    UIPC_Close(UIPC_CH_ID_AV_CTRL);
+    UIPC_Close(UIPC_CH_ID_AV_CTRL, UIPC_USER_A2DP);
     return;
   }
 
@@ -261,6 +267,22 @@ static void btif_a2dp_recv_ctrl_data(void) {
       btif_av_stream_start_offload();
       break;
 
+    case A2DP_CTRL_GET_PRESENTATION_POSITION: {
+      btif_a2dp_command_ack(A2DP_CTRL_ACK_SUCCESS);
+
+      UIPC_Send(UIPC_CH_ID_AV_CTRL, 0,
+                (uint8_t*)&(delay_report_stats.total_bytes_read),
+                sizeof(uint64_t));
+      UIPC_Send(UIPC_CH_ID_AV_CTRL, 0,
+                (uint8_t*)&(delay_report_stats.audio_delay), sizeof(uint16_t));
+
+      uint32_t seconds = delay_report_stats.timestamp.tv_sec;
+      UIPC_Send(UIPC_CH_ID_AV_CTRL, 0, (uint8_t*)&seconds, sizeof(seconds));
+
+      uint32_t nsec = delay_report_stats.timestamp.tv_nsec;
+      UIPC_Send(UIPC_CH_ID_AV_CTRL, 0, (uint8_t*)&nsec, sizeof(nsec));
+      break;
+    }
     default:
       APPL_TRACE_ERROR("%s: UNSUPPORTED CMD (%d)", __func__, cmd);
       btif_a2dp_command_ack(A2DP_CTRL_ACK_FAILURE);
@@ -357,4 +379,21 @@ void btif_a2dp_command_ack(tA2DP_CTRL_ACK status) {
 
   /* Acknowledge start request */
   UIPC_Send(UIPC_CH_ID_AV_CTRL, 0, &ack, sizeof(ack));
+}
+
+void btif_a2dp_control_log_bytes_read(uint32_t bytes_read) {
+  delay_report_stats.total_bytes_read += bytes_read;
+  clock_gettime(CLOCK_MONOTONIC, &delay_report_stats.timestamp);
+}
+
+void btif_a2dp_control_set_audio_delay(uint16_t delay) {
+  APPL_TRACE_DEBUG("%s: DELAY: %.1f ms", __func__, (float)delay / 10);
+  delay_report_stats.audio_delay = delay;
+}
+
+void btif_a2dp_control_reset_audio_delay(void) {
+  APPL_TRACE_DEBUG("%s", __func__);
+  delay_report_stats.audio_delay = 0;
+  delay_report_stats.total_bytes_read = 0;
+  delay_report_stats.timestamp = {};
 }
