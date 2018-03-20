@@ -126,4 +126,6 @@ interface IBluetooth
 
     void onLeServiceUp();
     void onBrEdrDown();
+    int setSocketOpt(int type, int port, int optionName, in byte [] optionVal, int optionLen);
+    int getSocketOpt(int type, int port, int optionName, out byte [] optionVal);
 }

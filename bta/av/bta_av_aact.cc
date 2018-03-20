@@ -873,7 +873,7 @@ void bta_av_cleanup(tBTA_AV_SCB* p_scb, UNUSED_ATTR tBTA_AV_DATA* p_data) {
   /* if de-registering shut everything down */
   msg.hdr.layer_specific = p_scb->hndl;
   p_scb->started = false;
-  p_scb->current_codec = nullptr;
+  p_scb->use_rtp_header_marker_bit = false;
   p_scb->cong = false;
   p_scb->role = role;
   p_scb->cur_psc_mask = 0;
@@ -1326,7 +1326,7 @@ void bta_av_do_close(tBTA_AV_SCB* p_scb, UNUSED_ATTR tBTA_AV_DATA* p_data) {
 
   /* close stream */
   p_scb->started = false;
-  p_scb->current_codec = nullptr;
+  p_scb->use_rtp_header_marker_bit = false;
 
   /* drop the buffers queued in L2CAP */
   L2CA_FlushChannel(p_scb->l2c_cid, L2CAP_FLUSH_CHANS_ALL);
@@ -2028,7 +2028,7 @@ void bta_av_data_path(tBTA_AV_SCB* p_scb, UNUSED_ATTR tBTA_AV_DATA* p_data) {
 
   if (p_scb->cong) return;
 
-  if (p_scb->current_codec->useRtpHeaderMarkerBit()) {
+  if (p_scb->use_rtp_header_marker_bit) {
     m_pt |= AVDT_MARKER_SET;
   }
 
@@ -2151,13 +2151,21 @@ void bta_av_start_ok(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   BT_HDR hdr;
   uint8_t policy = HCI_ENABLE_SNIFF_MODE;
   uint8_t cur_role;
+  uint8_t local_tsep = p_scb->seps[p_scb->sep_idx].tsep;
 
-  APPL_TRACE_DEBUG("%s: peer %s handle:%d wait:0x%x, role:0x%x", __func__,
-                   p_scb->peer_addr.ToString().c_str(), p_scb->hndl,
-                   p_scb->wait, p_scb->role);
+  APPL_TRACE_DEBUG("%s: peer %s handle:%d wait:0x%x role:0x%x local_tsep:%d",
+                   __func__, p_scb->peer_addr.ToString().c_str(), p_scb->hndl,
+                   p_scb->wait, p_scb->role, local_tsep);
 
   p_scb->started = true;
-  p_scb->current_codec = bta_av_get_a2dp_current_codec();
+
+  if (local_tsep == AVDT_TSEP_SRC) {
+    // The RTP Header marker bit for the A2DP Source encoder
+    A2dpCodecConfig* codec_config =
+        bta_av_get_a2dp_peer_current_codec(p_scb->peer_addr);
+    CHECK(codec_config != nullptr);
+    p_scb->use_rtp_header_marker_bit = codec_config->useRtpHeaderMarkerBit();
+  }
 
   if (p_scb->sco_suspend) {
     p_scb->sco_suspend = false;
@@ -2167,7 +2175,7 @@ void bta_av_start_ok(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
 
   /* for A2DP SINK we do not send get_caps */
   if ((p_scb->avdt_handle == p_scb->seps[p_scb->sep_idx].av_handle) &&
-      (p_scb->seps[p_scb->sep_idx].tsep == AVDT_TSEP_SNK)) {
+      (local_tsep == AVDT_TSEP_SNK)) {
     p_scb->wait &= ~(BTA_AV_WAIT_ACP_CAPS_ON);
     APPL_TRACE_DEBUG("%s: local SEP type is SNK new wait is 0x%x", __func__,
                      p_scb->wait);
@@ -2182,8 +2190,9 @@ void bta_av_start_ok(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
     p_data = (tBTA_AV_DATA*)&hdr;
     hdr.offset = BTA_AV_RS_FAIL;
   }
-  APPL_TRACE_DEBUG("%s: peer %s wait:0x%x", __func__,
-                   p_scb->peer_addr.ToString().c_str(), p_scb->wait);
+  APPL_TRACE_DEBUG("%s: peer %s wait:0x%x use_rtp_header_marker_bit:%s",
+                   __func__, p_scb->peer_addr.ToString().c_str(), p_scb->wait,
+                   (p_scb->use_rtp_header_marker_bit) ? "true" : "false");
 
   if (p_data && (p_data->hdr.offset != BTA_AV_RS_NONE)) {
     p_scb->wait &= ~BTA_AV_WAIT_ROLE_SW_BITS;
