@@ -468,26 +468,21 @@ static void bta_av_api_register(tBTA_AV_DATA* p_data) {
                         BTA_ID_AV);
 #endif
 
-        /* For the Audio Sink role we support additional TG 1.3 to support
+        /* For the Audio Sink role we support additional TG to support
          * absolute volume.
          */
         uint16_t profile_version = AVRC_REV_1_0;
 
-        if (profile_initialized == UUID_SERVCLASS_AUDIO_SOURCE) {
-          if (!strncmp(AVRCP_1_6_STRING, avrcp_version,
-                       sizeof(AVRCP_1_6_STRING))) {
-            profile_version = AVRC_REV_1_6;
-          } else if (!strncmp(AVRCP_1_5_STRING, avrcp_version,
-                              sizeof(AVRCP_1_5_STRING))) {
-            profile_version = AVRC_REV_1_5;
-          } else if (!strncmp(AVRCP_1_3_STRING, avrcp_version,
-                              sizeof(AVRCP_1_3_STRING))) {
-            profile_version = AVRC_REV_1_3;
-          } else {
-            profile_version = AVRC_REV_1_4;
-          }
-        } else if (profile_initialized == UUID_SERVCLASS_AUDIO_SINK) {
-          // Initialize AVRCP1.4 to provide Absolute Volume control.
+        if (!strncmp(AVRCP_1_6_STRING, avrcp_version,
+                     sizeof(AVRCP_1_6_STRING))) {
+          profile_version = AVRC_REV_1_6;
+        } else if (!strncmp(AVRCP_1_5_STRING, avrcp_version,
+                            sizeof(AVRCP_1_5_STRING))) {
+          profile_version = AVRC_REV_1_5;
+        } else if (!strncmp(AVRCP_1_3_STRING, avrcp_version,
+                            sizeof(AVRCP_1_3_STRING))) {
+          profile_version = AVRC_REV_1_3;
+        } else {
           profile_version = AVRC_REV_1_4;
         }
 
@@ -523,7 +518,6 @@ static void bta_av_api_register(tBTA_AV_DATA* p_data) {
 
     p_scb->suspend_sup = true;
     p_scb->recfg_sup = true;
-    p_scb->skip_sdp = false;
 
     avdtp_stream_config.scb_index = p_scb->hdi;
     avdtp_stream_config.p_avdt_ctrl_cback = &bta_av_proc_stream_evt;
@@ -1443,6 +1437,5 @@ void bta_debug_av_dump(int fd) {
             p_scb->no_rtp_header ? "true" : "false");
     dprintf(fd, "    Intended UUID of Initiator to connect to: 0x%x\n",
             p_scb->uuid_int);
-    dprintf(fd, "    Skip SDP: %s\n", p_scb->skip_sdp ? "true" : "false");
   }
 }
