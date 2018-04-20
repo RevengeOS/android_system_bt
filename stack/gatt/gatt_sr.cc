@@ -490,8 +490,8 @@ static tGATT_STATUS gatt_build_primary_service_rsp(
 
     UINT16_TO_STREAM(p, el.s_hdl);
 
-    if (gatt_cb.last_primary_s_handle &&
-        gatt_cb.last_primary_s_handle == el.s_hdl) {
+    if (gatt_cb.last_service_handle &&
+        gatt_cb.last_service_handle == el.s_hdl) {
       VLOG(1) << "Use 0xFFFF for the last primary attribute";
       /* see GATT ERRATA 4065, 4063, ATT ERRATA 4062 */
       UINT16_TO_STREAM(p, 0xFFFF);
@@ -790,7 +790,7 @@ static void gatts_process_mtu_req(tGATT_TCB& tcb, uint16_t len,
 void gatts_process_read_by_type_req(tGATT_TCB& tcb, uint8_t op_code,
                                     uint16_t len, uint8_t* p_data) {
   Uuid uuid = Uuid::kEmpty;
-  uint16_t s_hdl, e_hdl, err_hdl = 0;
+  uint16_t s_hdl = 0, e_hdl = 0, err_hdl = 0;
   tGATT_STATUS reason =
       gatts_validate_packet_format(op_code, len, p_data, &uuid, s_hdl, e_hdl);
 
