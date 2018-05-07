@@ -17,6 +17,7 @@
 #pragma once
 
 #include <base/bind.h>
+#include <base/memory/weak_ptr.h>
 #include <map>
 #include <memory>
 
@@ -63,7 +64,8 @@ class ConnectionHandler {
    * TODO: Add message loop to determine which thread events are posted to
    */
   static bool Initialize(const ConnectionCallback& callback,
-                         AvrcpInterface* avrcp, SdpInterface* sdp);
+                         AvrcpInterface* avrcp, SdpInterface* sdp,
+                         VolumeInterface* vol);
 
   /**
    * Clears the singleton and tears down SDP
@@ -120,6 +122,7 @@ class ConnectionHandler {
  private:
   AvrcpInterface* avrc_;
   SdpInterface* sdp_;
+  VolumeInterface* vol_;
 
   ConnectionCallback connection_cb_;
 
@@ -146,12 +149,14 @@ class ConnectionHandler {
   void MessageCb(uint8_t handle, uint8_t label, uint8_t opcode,
                  tAVRC_MSG* p_msg);
 
-  ConnectionHandler() = default;
+  ConnectionHandler() : weak_ptr_factory_(this){};
   virtual ~ConnectionHandler() = default;
 
   // Callback for when sending a response to a device
   void SendMessage(uint8_t handle, uint8_t label, bool browse,
                    std::unique_ptr<::bluetooth::PacketBuilder> message);
+
+  base::WeakPtrFactory<ConnectionHandler> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(ConnectionHandler);
 };
 

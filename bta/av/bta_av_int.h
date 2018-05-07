@@ -369,7 +369,6 @@ typedef struct {
 /* data type for BTA_AV_SDP_DISC_OK_EVT */
 typedef struct {
   BT_HDR hdr;
-  uint16_t avdt_version; /* AVDTP protocol version */
 } tBTA_AV_SDP_RES;
 
 /* data type for BTA_AV_API_OFFLOAD_RSP_EVT */
@@ -456,7 +455,9 @@ typedef union {
   0x02 /* API open was called while incoming timer is running */
 
 /* type for AV stream control block */
-struct tBTA_AV_SCB {
+// TODO: This should be renamed and changed to a proper class
+struct tBTA_AV_SCB final {
+ public:
   const tBTA_AV_ACT* p_act_tbl; /* the action table for stream state machine */
   const tBTA_AV_CO_FUNCTS* p_cos; /* the associated callout functions */
   bool sdp_discovery_started; /* variable to determine whether SDP is started */
@@ -467,10 +468,8 @@ struct tBTA_AV_SCB {
   tAVDT_SEP_INFO sep_info[BTA_AV_NUM_SEPS]; /* stream discovery results */
   AvdtpSepConfig cfg;                       /* local SEP configuration */
   alarm_t* avrc_ct_timer;                   /* delay timer for AVRC CT */
-  RawAddress peer_addr;                     /* peer BD address */
   uint16_t l2c_cid;                         /* L2CAP channel ID */
   uint16_t stream_mtu;                      /* MTU of stream */
-  uint16_t avdt_version;      /* the avdt version of peer device */
   tBTA_SEC sec_mask;          /* security mask */
   uint8_t media_type;         /* Media type: AVDT_MEDIA_TYPE_* */
   bool cong;                  /* true if AVDTP congested */
@@ -515,6 +514,40 @@ struct tBTA_AV_SCB {
   uint16_t uuid_int; /*intended UUID of Initiator to connect to */
   bool offload_start_pending;
   bool offload_started;
+
+  /**
+   * Called to setup the state when connected to a peer.
+   *
+   * @param peer_address the peer address
+   */
+  void OnConnected(const RawAddress& peer_address);
+
+  /**
+   * Called to clear the state when disconnected from a peer.
+   *
+   */
+  void OnDisconnected();
+
+  /**
+   * Get the peer address.
+   */
+  const RawAddress& PeerAddress() const { return peer_address_; }
+
+  /**
+   * Get the AVDTP version of the peer device.
+   */
+  uint16_t AvdtpVersion() const { return avdtp_version_; }
+
+  /**
+   * Set the AVDTP version of the peer device.
+   *
+   * @param avdtp_version the AVDTP version to use
+   */
+  void SetAvdtpVersion(uint16_t avdtp_version);
+
+ private:
+  RawAddress peer_address_;  // Peer address
+  uint16_t avdtp_version_;   // The AVDTP version of the peer device
 };
 
 #define BTA_AV_RC_ROLE_MASK 0x10
@@ -640,6 +673,7 @@ extern bool bta_av_is_scb_init(tBTA_AV_SCB* p_scb);
 extern void bta_av_set_scb_sst_incoming(tBTA_AV_SCB* p_scb);
 extern tBTA_AV_LCB* bta_av_find_lcb(const RawAddress& addr, uint8_t op);
 extern const char* bta_av_sst_code(uint8_t state);
+extern void bta_av_free_scb(tBTA_AV_SCB* p_scb);
 
 /* main functions */
 extern void bta_av_api_deregister(tBTA_AV_DATA* p_data);
