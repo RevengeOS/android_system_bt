@@ -26,6 +26,7 @@
 #include "avrcp_packet.h"
 #include "avrcp_test_helper.h"
 #include "device.h"
+#include "stack_config.h"
 #include "tests/avrcp/avrcp_test_packets.h"
 #include "tests/packet_test_helper.h"
 
@@ -44,6 +45,12 @@ using ::testing::MockFunction;
 using ::testing::Mock;
 using ::testing::NiceMock;
 using ::testing::Return;
+
+bool get_pts_avrcp_test(void) { return false; }
+
+const stack_config_t interface = {
+    nullptr, get_pts_avrcp_test, nullptr, nullptr, nullptr, nullptr, nullptr,
+    nullptr};
 
 // TODO (apanicke): All the tests below are just basic positive unit tests.
 // Add more tests to increase code coverage.
@@ -986,5 +993,47 @@ TEST_F(AvrcpDeviceTest, getCapabilitiesTest) {
   SendMessage(3, request_unknown);
 }
 
+TEST_F(AvrcpDeviceTest, getInvalidItemAttributesTest) {
+  MockMediaInterface interface;
+  NiceMock<MockA2dpInterface> a2dp_interface;
+
+  test_device->RegisterInterfaces(&interface, &a2dp_interface, nullptr);
+
+  SongInfo info = {"test_id",
+                   {// The attribute map
+                    AttributeEntry(Attribute::TITLE, "Test Song"),
+                    AttributeEntry(Attribute::ARTIST_NAME, "Test Artist"),
+                    AttributeEntry(Attribute::ALBUM_NAME, "Test Album"),
+                    AttributeEntry(Attribute::TRACK_NUMBER, "1"),
+                    AttributeEntry(Attribute::TOTAL_NUMBER_OF_TRACKS, "2"),
+                    AttributeEntry(Attribute::GENRE, "Test Genre"),
+                    AttributeEntry(Attribute::PLAYING_TIME, "1000")}};
+  std::vector<SongInfo> list = {info};
+
+  EXPECT_CALL(interface, GetNowPlayingList(_))
+      .WillRepeatedly(InvokeCb<0>("test_id", list));
+
+  auto compare_to_full = GetItemAttributesResponseBuilder::MakeBuilder(
+      Status::UIDS_CHANGED, 0xFFFF);
+  compare_to_full->AddAttributeEntry(Attribute::TITLE, "Test Song");
+  compare_to_full->AddAttributeEntry(Attribute::ARTIST_NAME, "Test Artist");
+  compare_to_full->AddAttributeEntry(Attribute::ALBUM_NAME, "Test Album");
+  compare_to_full->AddAttributeEntry(Attribute::TRACK_NUMBER, "1");
+  compare_to_full->AddAttributeEntry(Attribute::TOTAL_NUMBER_OF_TRACKS, "2");
+  compare_to_full->AddAttributeEntry(Attribute::GENRE, "Test Genre");
+  compare_to_full->AddAttributeEntry(Attribute::PLAYING_TIME, "1000");
+  EXPECT_CALL(response_cb,
+              Call(1, true, matchPacket(std::move(compare_to_full))))
+      .Times(1);
+
+  auto request = TestBrowsePacket::Make(
+      get_item_attributes_request_all_attributes_invalid);
+  SendBrowseMessage(1, request);
+}
+
 }  // namespace avrcp
 }  // namespace bluetooth
+
+const stack_config_t* stack_config_get_interface(void) {
+  return &bluetooth::avrcp::interface;
+}

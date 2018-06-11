@@ -277,6 +277,27 @@ static tBTA_AV_SCB* bta_av_addr_to_scb(const RawAddress& bd_addr) {
   return p_scb;
 }
 
+int BTA_AvObtainPeerChannelIndex(const RawAddress& peer_address) {
+  // Find the entry for the peer (if exists)
+  tBTA_AV_SCB* p_scb = bta_av_addr_to_scb(peer_address);
+  if (p_scb != nullptr) {
+    return p_scb->hdi;
+  }
+
+  // Find the index for an entry that is not used
+  for (int index = 0; index < BTA_AV_NUM_STRS; index++) {
+    tBTA_AV_SCB* p_scb = bta_av_cb.p_scb[index];
+    if (p_scb == nullptr) {
+      continue;
+    }
+    if (p_scb->PeerAddress().IsEmpty()) {
+      return p_scb->hdi;
+    }
+  }
+
+  return -1;
+}
+
 /*******************************************************************************
  *
  * Function         bta_av_hndl_to_scb
@@ -818,6 +839,13 @@ bool bta_av_chk_start(tBTA_AV_SCB* p_scb) {
       }
     }
   }
+
+  LOG_INFO(LOG_TAG,
+           "%s: peer %s channel:%d bta_av_cb.audio_open_cnt:%d role:0x%x "
+           "features:0x%x start:%s",
+           __func__, p_scb->PeerAddress().ToString().c_str(), p_scb->chnl,
+           bta_av_cb.audio_open_cnt, p_scb->role, bta_av_cb.features,
+           logbool(start).c_str());
   return start;
 }
 
@@ -1057,10 +1085,11 @@ bool bta_av_link_role_ok(tBTA_AV_SCB* p_scb, uint8_t bits) {
   bool is_ok = true;
 
   if (BTM_GetRole(p_scb->PeerAddress(), &role) == BTM_SUCCESS) {
-    LOG_INFO(LOG_TAG,
-             "%s: hndl:x%x role:%d conn_audio:x%x bits:%d features:x%x",
-             __func__, p_scb->hndl, role, bta_av_cb.conn_audio, bits,
-             bta_av_cb.features);
+    LOG_INFO(
+        LOG_TAG,
+        "%s: peer %s hndl:0x%x role:%d conn_audio:0x%x bits:%d features:0x%x",
+        __func__, p_scb->PeerAddress().ToString().c_str(), p_scb->hndl, role,
+        bta_av_cb.conn_audio, bits, bta_av_cb.features);
     if (BTM_ROLE_MASTER != role &&
         (A2DP_BitsSet(bta_av_cb.conn_audio) > bits ||
          (bta_av_cb.features & BTA_AV_FEAT_MASTER))) {
@@ -1068,9 +1097,13 @@ bool bta_av_link_role_ok(tBTA_AV_SCB* p_scb, uint8_t bits) {
         bta_sys_clear_policy(BTA_ID_AV, HCI_ENABLE_MASTER_SLAVE_SWITCH,
                              p_scb->PeerAddress());
 
-      if (BTM_CMD_STARTED !=
-          BTM_SwitchRole(p_scb->PeerAddress(), BTM_ROLE_MASTER, NULL)) {
+      tBTM_STATUS status =
+          BTM_SwitchRole(p_scb->PeerAddress(), BTM_ROLE_MASTER, NULL);
+      if (status != BTM_CMD_STARTED) {
         /* can not switch role on SCB - start the timer on SCB */
+        LOG_ERROR(LOG_TAG,
+                  "%s: peer %s BTM_SwitchRole(BTM_ROLE_MASTER) error: %d",
+                  __func__, p_scb->PeerAddress().ToString().c_str(), status);
       }
       is_ok = false;
       p_scb->wait |= BTA_AV_WAIT_ROLE_SW_RES_START;
@@ -1078,46 +1111,6 @@ bool bta_av_link_role_ok(tBTA_AV_SCB* p_scb, uint8_t bits) {
   }
 
   return is_ok;
-}
-
-/*******************************************************************************
- *
- * Function         bta_av_chk_mtu
- *
- * Description      if this is audio channel, check if more than one audio
- *                  channel is connected.
- *
- * Returns          The smallest mtu of the connected audio channels
- *
- ******************************************************************************/
-uint16_t bta_av_chk_mtu(tBTA_AV_SCB* p_scb, UNUSED_ATTR uint16_t mtu) {
-  uint16_t ret_mtu = BTA_AV_MAX_A2DP_MTU;
-  tBTA_AV_SCB* p_scbi;
-  int i;
-  uint8_t mask;
-
-  /* TODO_MV mess with the mtu according to the number of EDR/non-EDR headsets
-   */
-  if (p_scb->chnl == BTA_AV_CHNL_AUDIO) {
-    if (bta_av_cb.audio_open_cnt >= 2) {
-      /* more than one audio channel is connected */
-      for (i = 0; i < BTA_AV_NUM_STRS; i++) {
-        p_scbi = bta_av_cb.p_scb[i];
-        if ((p_scb != p_scbi) && p_scbi &&
-            (p_scbi->chnl == BTA_AV_CHNL_AUDIO)) {
-          mask = BTA_AV_HNDL_TO_MSK(i);
-          APPL_TRACE_DEBUG("%s: [%d] mtu: %d, mask:0x%x", __func__, i,
-                           p_scbi->stream_mtu, mask);
-          if (bta_av_cb.conn_audio & mask) {
-            if (ret_mtu > p_scbi->stream_mtu) ret_mtu = p_scbi->stream_mtu;
-          }
-        }
-      }
-    }
-    APPL_TRACE_DEBUG("%s: count:%d, conn_audio:0x%x, ret:%d", __func__,
-                     bta_av_cb.audio_open_cnt, bta_av_cb.conn_audio, ret_mtu);
-  }
-  return ret_mtu;
 }
 
 /*******************************************************************************
@@ -1462,7 +1455,7 @@ void bta_debug_av_dump(int fd) {
     dprintf(fd, "    Congested: %s\n", p_scb->cong ? "true" : "false");
     dprintf(fd, "    Open status: %d\n", p_scb->open_status);
     dprintf(fd, "    Channel: %d\n", p_scb->chnl);
-    dprintf(fd, "    BTA handle: %d\n", p_scb->hndl);
+    dprintf(fd, "    BTA handle: 0x%x\n", p_scb->hndl);
     dprintf(fd, "    Protocol service capabilities mask: 0x%x\n",
             p_scb->cur_psc_mask);
     dprintf(fd, "    AVDTP handle: %d\n", p_scb->avdt_handle);
