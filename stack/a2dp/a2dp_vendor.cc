@@ -531,6 +531,8 @@ const char* A2DP_VendorCodecIndexStr(btav_a2dp_codec_index_t codec_index) {
       return A2DP_VendorCodecIndexStrAptx();
     case BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_HD:
       return A2DP_VendorCodecIndexStrAptxHd();
+    case BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_ADAPTIVE:
+      break;
     case BTAV_A2DP_CODEC_INDEX_SOURCE_LDAC:
       return A2DP_VendorCodecIndexStrLdac();
     // Add a switch statement for each vendor-specific codec
@@ -554,6 +556,8 @@ bool A2DP_VendorInitCodecConfig(btav_a2dp_codec_index_t codec_index,
       return A2DP_VendorInitCodecConfigAptx(p_cfg);
     case BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_HD:
       return A2DP_VendorInitCodecConfigAptxHd(p_cfg);
+    case BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_ADAPTIVE:
+      break;
     case BTAV_A2DP_CODEC_INDEX_SOURCE_LDAC:
       return A2DP_VendorInitCodecConfigLdac(p_cfg);
     // Add a switch statement for each vendor-specific codec
